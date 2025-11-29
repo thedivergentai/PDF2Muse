@@ -1,73 +1,207 @@
 # PDF2Muse 🎶
 
-PDF2Muse is a command-line tool that converts PDF files of sheet music into MusicXML 🎼 and MuseScore (.mscx) files. It leverages the power of the [oemer](https://github.com/BreezeWhite/oemer) optical music recognition library to transcribe the music from the PDF.
+PDF2Muse is a modern Python tool that converts PDF files of sheet music into MusicXML 🎼 and MuseScore (.mscx) files using optical music recognition (OMR). It leverages the power of the [oemer](https://github.com/BreezeWhite/oemer) library to transcribe music from PDFs.
+
+## ✨ Features
+
+- **Easy to use**: Simple command-line interface and web UI
+- **High quality**: Uses state-of-the-art optical music recognition
+- **Flexible output**: Generates both MusicXML and MuseScore formats
+- **Modern architecture**: Built with modern Python best practices
+- **Beautiful output**: Rich terminal output with progress indicators
 
 ## 🙏 Acknowledgements
 
 This project would not have been possible without the excellent work done by the [oemer](https://github.com/BreezeWhite/oemer) project. We extend our sincere gratitude to the oemer team for creating such a powerful and versatile optical music recognition library.
 
-We also thank Google ☁️ for providing a free cloud trial, which enabled us to use the Gemini models and their awesomely large context window to "vibecode" this repository.
+## ⚙️ Requirements
 
-
-## ⚙️ Dependencies
-
-This project requires the following:
-
-*   Python 3.9 🐍
-*   **Python Libraries:** 📚
-    *   `oemer`
-    *   `pdf2image`
-    *   `requests`
-*   **External Tools:** 🛠️
-    *   Poppler (for pdf to image conversion)
+- Python 3.9 or higher 🐍
+- Poppler (for PDF to image conversion)
 
 ## ⬇️ Installation
 
-1.  **Install Python:** Make sure you have Python 3.7 or higher installed. You can check your Python version by running `python --version` or `python3 --version` in your terminal.
-2.  **Clone the Repository:**
-    ```bash
-    git clone https://github.com/thedivergentai/PDF2Muse.git
-    cd PDF2Muse
-    ```
-3.  **Run the Setup Script:** ⚙️
-    Run the appropriate setup script for your operating system:
-    *   **Linux/macOS:** `./setup.sh`
-    *   **Windows:** `setup.bat`
+### Quick Install
 
-    The setup script will:
-    *   Install Miniconda locally within the `miniconda` directory.
-    *   Prompt you to select an installation version: `CPU`, `GPU (ONNX Runtime)`, `TensorFlow GPU`, or `Gradio UI`.
-    *   Create a Conda environment named `pdf2muse` with the necessary dependencies.
+```bash
+pip install -e .
+```
+
+### Development Install
+
+```bash
+pip install -e ".[dev]"
+```
+
+The package will automatically install all required dependencies including:
+- oemer (optical music recognition)
+- pdf2image (PDF conversion)
+- typer (CLI framework)
+- gradio (web interface)
+- rich (beautiful terminal output)
+
+### Installing Poppler
+
+Poppler is required for PDF to image conversion:
+
+**Windows:**
+```bash
+# Using Chocolatey
+choco install poppler
+
+# Or download from: https://github.com/oschwartz10612/poppler-windows/releases/
+```
+
+**macOS:**
+```bash
+brew install poppler
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get install poppler-utils
+```
 
 ## 🚀 Usage
 
-1.  **Run the Run Script:** 🚀
-    Run the appropriate run script for your operating system:
-    *   **Linux/macOS:** `./run_pdf2muse.sh`
-    *   **Windows:** `run_pdf2muse.bat`
+### Command Line Interface
 
-    The run script will:
-    *   Prompt you to select a runtime version: `CPU`, `GPU (ONNX Runtime)`, `TensorFlow GPU`, or `Gradio UI`.
-    *   For `CPU`, `GPU`, and `TensorFlow GPU`:
-        *   Prompt you for the path to the PDF file and the output directory (default: `output`).
-        *   Run the PDF2Muse conversion process.
-    *   For `Gradio UI`:
-        *   Launch the Gradio web interface.
+**Convert a PDF file:**
+```bash
+pdf2muse convert sheet_music.pdf
+```
 
-## 🧪 Testing
+**Specify output directory:**
+```bash
+pdf2muse convert sheet_music.pdf --output ./my_output
+```
 
-To test your installation, run the `run_pdf2muse.sh` or `run_pdf2muse.bat` script and select one of the runtime versions. Provide a sample PDF file and an output directory. Verify that the script completes successfully and generates the expected output files (MusicXML and MuseScore files). For the Gradio UI, verify that the web interface launches correctly and that you can upload a PDF file and convert it.
+**Disable deskewing:**
+```bash
+pdf2muse convert sheet_music.pdf --no-deskew
+```
 
-## 📜 Scripts
+**Use TensorFlow instead of ONNX:**
+```bash
+pdf2muse convert sheet_music.pdf --use-tf
+```
 
-*   **`main.py`:** The main entry point of the application. It orchestrates the entire process: downloading checkpoints, converting PDF to PNG, running oemer, joining MusicXML files, converting to MuseScore format, and cleaning up temporary files.
-*   **`download_checkpoints.py`:** Handles downloading the pre-trained oemer model checkpoints if they are not already present in the expected location.
-*   **`pdf_to_png.py`:** Converts each page of a PDF file into a separate PNG image using the `pdf2image` library (which depends on Poppler).
-*   **`musicxml_utils.py`:** Provides utility functions for working with MusicXML files:
-    *   `join_musicxml_files()`: Combines multiple MusicXML files (typically one per page) into a single MusicXML file.
-    *   `convert_to_musescore_format()`: Converts a MusicXML file to the uncompressed MuseScore format (.mscx).
+**Enable verbose logging:**
+```bash
+pdf2muse convert sheet_music.pdf --verbose
+```
 
-## 🛠️ Additional Notes
+**Show help:**
+```bash
+pdf2muse --help
+pdf2muse convert --help
+```
 
-*   **Poppler:** Poppler is required for PDF to image conversion. The setup scripts will install it via Conda.
-*   **CUDA (GPU Version):** The setup scripts will install CUDA 12.4 using `conda install nvidia/label/cuda-12.4.0::cuda-toolkit`.
+### Web Interface
+
+Launch the Gradio web UI:
+```bash
+pdf2muse ui
+```
+
+With custom port:
+```bash
+pdf2muse ui --port 8080
+```
+
+Create a public shareable link:
+```bash
+pdf2muse ui --share
+```
+
+### Download Models
+
+Pre-download the oemer model checkpoints:
+```bash
+pdf2muse download-models
+```
+
+Force re-download:
+```bash
+pdf2muse download-models --force
+```
+
+## 📦 Package Structure
+
+```
+PDF2Muse/
+├── src/
+│   └── pdf2muse/
+│       ├── __init__.py       # Package initialization
+│       ├── cli.py            # Typer CLI entry point
+│       ├── core.py           # Main processing pipeline
+│       ├── oemer_utils.py    # Oemer wrapper utilities
+│       ├── musicxml.py       # MusicXML manipulation
+│       └── ui.py             # Gradio web interface
+├── pyproject.toml            # Project metadata & dependencies
+├── README.md                 # This file
+└── .gitignore
+```
+
+## 🔧 Development
+
+### Running Tests
+
+```bash
+pytest
+```
+
+### Code Formatting
+
+```bash
+black src/
+```
+
+### Linting
+
+```bash
+ruff check src/
+```
+
+## 📝 How It Works
+
+1. **PDF to Images**: Converts each page of the PDF to a high-resolution PNG image
+2. **OMR Processing**: Runs oemer on each image to extract musical notation
+3. **MusicXML Generation**: Combines the recognized music into MusicXML format
+4. **MuseScore Conversion**: Converts the MusicXML to MuseScore's .mscx format
+
+## 🎯 Best Results
+
+For optimal recognition quality:
+- Use high-resolution scans (300 DPI or higher)
+- Ensure clear, uncluttered sheet music
+- Use standard Western music notation
+- Avoid handwritten scores (printed music works best)
+
+## 🐛 Troubleshooting
+
+**Import Error: No module named 'pdf2muse'**
+- Make sure you installed the package: `pip install -e .`
+
+**Command not found: pdf2muse**
+- Ensure your Python scripts directory is in your PATH
+- Try running: `python -m pdf2muse.cli` instead
+
+**Poppler error during conversion**
+- Install Poppler (see Installation section above)
+- On Windows, add Poppler's bin directory to your PATH
+
+**No MusicXML files generated**
+- Check that your PDF contains clear sheet music
+- Try enabling verbose mode: `pdf2muse convert file.pdf --verbose`
+- Ensure oemer checkpoints are downloaded: `pdf2muse download-models`
+
+## 📜 License
+
+MIT License - see LICENSE file for details.
+
+## 🔗 Links
+
+- **Homepage**: https://github.com/thedivergentai/PDF2Muse
+- **Issues**: https://github.com/thedivergentai/PDF2Muse/issues
+- **oemer Library**: https://github.com/BreezeWhite/oemer
