@@ -1,7 +1,6 @@
 """Utilities for working with oemer optical music recognition."""
 
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -47,8 +46,14 @@ def download_checkpoints(force: bool = False) -> None:
     """
     base_url = "https://github.com/BreezeWhite/oemer/releases/download/checkpoints/"
     checkpoint_files = {
-        "unet_big": {"model": "1st_model.onnx", "weights": "1st_weights.h5"},
-        "seg_net": {"model": "2nd_model.onnx", "weights": "2nd_weights.h5"},
+        "unet_big": {
+            "model": {"src": "1st_model.onnx", "dst": "model.onnx"},
+            "weights": {"src": "1st_weights.h5", "dst": "weights.h5"},
+        },
+        "seg_net": {
+            "model": {"src": "2nd_model.onnx", "dst": "model.onnx"},
+            "weights": {"src": "2nd_weights.h5", "dst": "weights.h5"},
+        },
     }
 
     checkpoint_dir = get_checkpoint_dir()
@@ -58,15 +63,17 @@ def download_checkpoints(force: bool = False) -> None:
         target_dir = checkpoint_dir / checkpoint_name
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        for file_type, filename in files.items():
-            file_path = target_dir / filename
+        for file_type, file_info in files.items():
+            src_filename = file_info["src"]
+            dst_filename = file_info["dst"]
+            file_path = target_dir / dst_filename
 
             if file_path.exists() and not force:
                 logger.debug(f"{file_path} already exists, skipping download")
                 continue
 
-            url = base_url + filename
-            console.print(f"[cyan]Downloading {filename}...[/cyan]")
+            url = base_url + src_filename
+            console.print(f"[cyan]Downloading {src_filename} as {dst_filename}...[/cyan]")
             logger.info(f"Downloading from {url}")
 
             try:
@@ -86,15 +93,15 @@ def download_checkpoints(force: bool = False) -> None:
                                 f.write(chunk)
                                 downloaded += len(chunk)
 
-                console.print(f"[green]✓[/green] Downloaded {filename}")
+                console.print(f"[green][OK][/green] Downloaded and saved {dst_filename}")
                 logger.info(f"Saved to {file_path}")
 
             except requests.RequestException as e:
-                logger.error(f"Failed to download {filename}: {e}")
-                console.print(f"[red]✗[/red] Failed to download {filename}")
+                logger.error(f"Failed to download {src_filename}: {e}")
+                console.print(f"[red][FAIL][/red] Failed to download {src_filename}")
                 raise
 
-    console.print("[green]✓[/green] All checkpoints ready")
+    console.print("[green][OK][/green] All checkpoints ready")
 
 
 def ensure_checkpoints() -> None:
@@ -103,10 +110,12 @@ def ensure_checkpoints() -> None:
     """
     checkpoint_dir = get_checkpoint_dir()
     
-    # Check if critical files exist
+    # Check if critical files exist with their correct internal names
     critical_files = [
-        checkpoint_dir / "unet_big" / "1st_model.onnx",
-        checkpoint_dir / "seg_net" / "2nd_model.onnx",
+        checkpoint_dir / "unet_big" / "model.onnx",
+        checkpoint_dir / "unet_big" / "weights.h5",
+        checkpoint_dir / "seg_net" / "model.onnx",
+        checkpoint_dir / "seg_net" / "weights.h5",
     ]
 
     if all(f.exists() for f in critical_files):

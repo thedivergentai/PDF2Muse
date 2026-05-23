@@ -2,9 +2,10 @@
 
 import logging
 import os
-import shutil
 import subprocess
+import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -29,6 +30,10 @@ class PDF2MusePipeline:
         deskew: bool = True,
         use_tf: bool = False,
         save_cache: bool = False,
+        poppler_path: Optional[str] = None,
+        musescore_path: Optional[str] = None,
+        first_page: Optional[int] = None,
+        last_page: Optional[int] = None,
     ):
         """
         Initialize the PDF2Muse pipeline.
@@ -39,12 +44,20 @@ class PDF2MusePipeline:
             deskew: Whether to perform deskewing (default: True)
             use_tf: Use TensorFlow for model inference (default: False, uses ONNX)
             save_cache: Save model predictions for future use (default: False)
+            poppler_path: Path to the poppler bin directory (default: None)
+            musescore_path: Path to the MuseScore executable (default: None)
+            first_page: First page of the PDF to convert (1-indexed, default: None)
+            last_page: Last page of the PDF to convert (1-indexed, default: None)
         """
         self.pdf_path = Path(pdf_path).resolve()
         self.output_dir = Path(output_dir).resolve()
         self.deskew = deskew
         self.use_tf = use_tf
         self.save_cache = save_cache
+        self.poppler_path = Path(poppler_path).resolve() if poppler_path else None
+        self.musescore_path = Path(musescore_path).resolve() if musescore_path else None
+        self.first_page = first_page
+        self.last_page = last_page
 
         if not self.pdf_path.exists():
             raise FileNotFoundError(f"PDF file not found: {self.pdf_path}")
@@ -62,19 +75,28 @@ class PDF2MusePipeline:
             List of paths to generated PNG files
         """
         logger.info(f"Converting PDF to PNG images: {self.pdf_path}")
-        console.print(f"[cyan]Converting PDF to images...[/cyan]")
+        console.print("[cyan]Converting PDF to images...[/cyan]")
 
         try:
-            images = convert_from_path(str(self.pdf_path))
+            convert_args = {}
+            if self.poppler_path:
+                convert_args["poppler_path"] = str(self.poppler_path)
+            if self.first_page:
+                convert_args["first_page"] = self.first_page
+            if self.last_page:
+                convert_args["last_page"] = self.last_page
+            
+            images = convert_from_path(str(self.pdf_path), **convert_args)
             png_files = []
 
             for i, image in enumerate(images):
-                png_path = output_dir / f"page_{i:03d}.png"
+                page_num = self.first_page + i if self.first_page else i
+                png_path = output_dir / f"page_{page_num:03d}.png"
                 image.save(str(png_path), "PNG")
                 png_files.append(png_path)
-                logger.debug(f"Saved page {i} to {png_path}")
+                logger.debug(f"Saved page {page_num} to {png_path}")
 
-            console.print(f"[green]✓[/green] Converted {len(png_files)} pages to images")
+            console.print(f"[green][OK][/green] Converted {len(png_files)} pages to images")
             return png_files
 
         except Exception as e:
@@ -96,7 +118,8 @@ class PDF2MusePipeline:
         """
         logger.info(f"Processing {image_path.name} with oemer")
 
-        command = ["oemer", str(image_path)]
+        # Invoke oemer via sys.executable, ignoring unpickling warnings, to ensure it runs in the active virtual environment
+        command = [sys.executable, "-W", "ignore", "-m", "oemer.ete", str(image_path)]
         
         if not self.deskew:
             command.append("--without-deskew")
@@ -106,10 +129,18 @@ class PDF2MusePipeline:
             command.append("--save-cache")
 
         try:
+            # Limit thread allocation inside ONNX Runtime CPU. This prevents a memory spike and 
+            # bad_alloc crash when running multiple large session graphs in a single process.
+            env = os.environ.copy()
+            env["OMP_NUM_THREADS"] = "1"
+            env["ONNXRUNTIME_INTER_OP_NUM_THREADS"] = "1"
+            env["ONNXRUNTIME_INTRA_OP_NUM_THREADS"] = "1"
+
             # Run oemer and capture output
             result = subprocess.run(
                 command,
                 cwd=str(musicxml_dir),
+                env=env,
                 check=True,
                 capture_output=True,
                 text=True,
@@ -135,7 +166,7 @@ class PDF2MusePipeline:
 
         except subprocess.CalledProcessError as e:
             logger.error(f"Error processing {image_path.name}: {e.stderr}")
-            console.print(f"[yellow]⚠[/yellow] Failed to process {image_path.name}")
+            console.print(f"[yellow][WARN][/yellow] Failed to process {image_path.name}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error processing {image_path.name}: {e}")
@@ -146,16 +177,16 @@ class PDF2MusePipeline:
         Execute the full PDF to MusicXML/MuseScore conversion pipeline.
 
         Returns:
-            Path to the final MuseScore (.mscx) file
+            Path to the final output file (MuseScore .mscx or MusicXML .musicxml fallback)
         """
-        console.print(f"\n[bold cyan]PDF2Muse Pipeline[/bold cyan]")
+        console.print("\n[bold cyan]PDF2Muse Pipeline[/bold cyan]")
         console.print(f"Input: {self.pdf_path}")
         console.print(f"Output: {self.output_dir}\n")
 
         # Ensure oemer checkpoints are available
         console.print("[cyan]Checking oemer model checkpoints...[/cyan]")
         ensure_checkpoints()
-        console.print("[green]✓[/green] Checkpoints ready\n")
+        console.print("[green][OK][/green] Checkpoints ready\n")
 
         # Create temporary directories
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -168,8 +199,12 @@ class PDF2MusePipeline:
             # Step 1: Convert PDF to PNG images
             png_files = self.pdf_to_png(image_dir)
 
-            # Step 2: Process each image with oemer
-            console.print(f"[cyan]Processing {len(png_files)} pages with oemer...[/cyan]")
+            # Step 2: Process each image with oemer (concurrently)
+            console.print(f"[cyan]Processing {len(png_files)} pages with oemer (concurrently)...[/cyan]")
+            
+            # Determine maximum concurrent workers based on CPU cores. Limit to 4 to avoid memory spikes.
+            max_workers = min(4, max(1, (os.cpu_count() or 2) // 2))
+            logger.info(f"Running concurrent OMR pipeline with max_workers={max_workers}")
             
             with Progress(
                 SpinnerColumn(),
@@ -178,15 +213,29 @@ class PDF2MusePipeline:
             ) as progress:
                 task = progress.add_task("Processing pages...", total=len(png_files))
                 
-                musicxml_files = []
-                for png_file in png_files:
-                    progress.update(task, description=f"Processing {png_file.name}...")
-                    musicxml_file = self.process_image_with_oemer(png_file, musicxml_dir)
-                    if musicxml_file:
-                        musicxml_files.append(musicxml_file)
-                    progress.advance(task)
+                results = [None] * len(png_files)
+                futures = {}
+                
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    for i, png_file in enumerate(png_files):
+                        future = executor.submit(self.process_image_with_oemer, png_file, musicxml_dir)
+                        futures[future] = (i, png_file.name)
+                    
+                    for future in as_completed(futures):
+                        idx, filename = futures[future]
+                        try:
+                            musicxml_file = future.result()
+                            if musicxml_file:
+                                results[idx] = musicxml_file
+                            progress.update(task, description=f"Completed {filename}")
+                        except Exception as e:
+                            logger.error(f"Error processing page {filename}: {e}")
+                            progress.update(task, description=f"Failed {filename}")
+                        progress.advance(task)
+                
+                musicxml_files = [res for res in results if res is not None]
 
-            console.print(f"[green]✓[/green] Processed {len(musicxml_files)} pages successfully\n")
+            console.print(f"[green][OK][/green] Processed {len(musicxml_files)} pages successfully\n")
 
             if not musicxml_files:
                 raise RuntimeError("No MusicXML files were generated")
@@ -195,17 +244,27 @@ class PDF2MusePipeline:
             console.print("[cyan]Joining MusicXML files...[/cyan]")
             combined_musicxml = self.output_dir / "combined.musicxml"
             join_musicxml_files(musicxml_dir, combined_musicxml)
-            console.print(f"[green]✓[/green] Created combined MusicXML\n")
+            console.print("[green][OK][/green] Created combined MusicXML\n")
 
             # Step 4: Convert to MuseScore format
             console.print("[cyan]Converting to MuseScore format...[/cyan]")
             musescore_file = self.output_dir / "combined.mscx"
-            convert_to_musescore_format(combined_musicxml, musescore_file)
-            console.print(f"[green]✓[/green] Created MuseScore file\n")
+            
+            try:
+                convert_to_musescore_format(
+                    combined_musicxml,
+                    musescore_file,
+                    musescore_path=self.musescore_path,
+                )
+                console.print("[green][OK][/green] Created MuseScore file\n")
+                result_file = musescore_file
+            except Exception as e:
+                console.print(f"[yellow][WARN][/yellow] MuseScore conversion skipped: {e}")
+                console.print("[cyan]Falling back to using MusicXML file directly.[/cyan]\n")
+                result_file = combined_musicxml
 
-        console.print(f"[bold green]✨ Conversion complete![/bold green]")
-        console.print(f"Output files:")
-        console.print(f"  • MusicXML: {combined_musicxml}")
-        console.print(f"  • MuseScore: {musescore_file}\n")
+        console.print("[bold green]Conversion complete![/bold green]")
+        console.print("Output files:")
+        console.print(f"  - Primary Result: {result_file}\n")
 
-        return musescore_file
+        return result_file

@@ -86,6 +86,26 @@ def convert(
         "--save-cache",
         help="Save model predictions for future use",
     ),
+    poppler_path: Optional[Path] = typer.Option(
+        None,
+        "--poppler-path",
+        help="Path to the Poppler bin directory (e.g. C:\\poppler\\bin)",
+    ),
+    musescore_path: Optional[Path] = typer.Option(
+        None,
+        "--musescore-path",
+        help="Path to the MuseScore executable (e.g. MuseScore4.exe)",
+    ),
+    first_page: Optional[int] = typer.Option(
+        None,
+        "--first-page",
+        help="First page of the PDF to convert (1-indexed)",
+    ),
+    last_page: Optional[int] = typer.Option(
+        None,
+        "--last-page",
+        help="Last page of the PDF to convert (1-indexed)",
+    ),
     verbose: bool = typer.Option(
         False,
         "--verbose",
@@ -100,7 +120,7 @@ def convert(
     music recognition (OMR).
 
     Example:
-        pdf2muse convert sheet_music.pdf -o ./output
+        pdf2muse convert sheet_music.pdf -o ./output --first-page 1 --last-page 2
     """
     setup_logging(verbose)
 
@@ -111,6 +131,10 @@ def convert(
             deskew=deskew,
             use_tf=use_tf,
             save_cache=save_cache,
+            poppler_path=str(poppler_path) if poppler_path else None,
+            musescore_path=str(musescore_path) if musescore_path else None,
+            first_page=first_page,
+            last_page=last_page,
         )
         pipeline.run()
 
@@ -137,6 +161,16 @@ def ui(
         "-p",
         help="Port to run the server on",
     ),
+    poppler_path: Optional[Path] = typer.Option(
+        None,
+        "--poppler-path",
+        help="Default path to the Poppler bin directory",
+    ),
+    musescore_path: Optional[Path] = typer.Option(
+        None,
+        "--musescore-path",
+        help="Default path to the MuseScore executable",
+    ),
 ):
     """
     Launch the Gradio web interface for PDF2Muse.
@@ -150,7 +184,10 @@ def ui(
     try:
         from .ui import create_interface
         
-        interface = create_interface()
+        interface = create_interface(
+            default_poppler=str(poppler_path) if poppler_path else None,
+            default_musescore=str(musescore_path) if musescore_path else None,
+        )
         interface.launch(
             server_port=port,
             share=share,
@@ -158,7 +195,7 @@ def ui(
         )
 
     except ImportError as e:
-        console.print(f"[red]Error:[/red] Gradio is not installed")
+        console.print("[red]Error:[/red] Gradio is not installed")
         console.print("Install it with: pip install 'pdf2muse[gradio]' or pip install gradio")
         raise typer.Exit(code=1)
     except Exception as e:
@@ -188,7 +225,7 @@ def download_models(
     try:
         console.print("[cyan]Downloading oemer model checkpoints...[/cyan]\n")
         download_checkpoints(force=force)
-        console.print("\n[green]✓[/green] Download complete!")
+        console.print("\n[green][OK][/green] Download complete!")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

@@ -31,6 +31,7 @@ dependencies = [
     "gradio>=4.0.0",
     "rich>=13.0.0",
     "Pillow>=10.0.0",
+    "requests",
 ]
 
 [project.optional-dependencies]

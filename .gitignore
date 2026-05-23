@@ -50,3 +50,8 @@ miniconda/
 # Temporary files
 *.tmp
 .cache/
+
+# Agent & Binary dependencies
+.agents/
+poppler/
+output_test/
