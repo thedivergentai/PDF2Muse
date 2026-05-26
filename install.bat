@@ -67,10 +67,10 @@ python -m pip install --upgrade pip >nul 2>&1
 :: Install dependencies
 if !INSTALL_DEV! equ 1 (
     echo [INFO] Installing package in editable mode with development extras...
-    pip install -e .[ui,dev]
+    pip install -e .[dev]
 ) else (
-    echo [INFO] Installing package in editable mode with WebUI extras...
-    pip install -e .[ui]
+    echo [INFO] Installing package in editable mode...
+    pip install -e .
 )
 if %errorlevel% neq 0 (
     echo [ERROR] Dependency installation failed.

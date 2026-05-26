@@ -50,10 +50,10 @@ python3 -m pip install --upgrade pip > /dev/null 2>&1
 # Install dependencies
 if [ "$INSTALL_DEV" -eq 1 ]; then
     echo "[INFO] Installing package in editable mode with development extras..."
-    pip install -e .[ui,dev]
+    pip install -e .[dev]
 else
-    echo "[INFO] Installing package in editable mode with WebUI extras..."
-    pip install -e .[ui]
+    echo "[INFO] Installing package in editable mode..."
+    pip install -e .
 fi
 
 # Pre-download model checkpoints
