@@ -9,7 +9,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
-from pdf2image import convert_from_path
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
@@ -66,7 +65,7 @@ class PDF2MusePipeline:
 
     def pdf_to_png(self, output_dir: Path) -> list[Path]:
         """
-        Convert PDF pages to PNG images.
+        Convert PDF pages to PNG images using pypdfium2.
 
         Args:
             output_dir: Directory to save PNG images
@@ -74,27 +73,34 @@ class PDF2MusePipeline:
         Returns:
             List of paths to generated PNG files
         """
+        import pypdfium2 as pdfium
+
         logger.info(f"Converting PDF to PNG images: {self.pdf_path}")
         console.print("[cyan]Converting PDF to images...[/cyan]")
 
         try:
-            convert_args = {}
-            if self.poppler_path:
-                convert_args["poppler_path"] = str(self.poppler_path)
-            if self.first_page:
-                convert_args["first_page"] = self.first_page
-            if self.last_page:
-                convert_args["last_page"] = self.last_page
-            
-            images = convert_from_path(str(self.pdf_path), **convert_args)
+            pdf = pdfium.PdfDocument(str(self.pdf_path))
             png_files = []
 
-            for i, image in enumerate(images):
-                page_num = self.first_page + i if self.first_page else i
-                png_path = output_dir / f"page_{page_num:03d}.png"
-                image.save(str(png_path), "PNG")
+            # Calculate range of pages to convert (0-indexed for pdfium, 1-indexed user options)
+            start_idx = (self.first_page - 1) if self.first_page else 0
+            end_idx = self.last_page if self.last_page else len(pdf)
+
+            # Bound checks
+            start_idx = max(0, min(start_idx, len(pdf)))
+            end_idx = max(start_idx, min(end_idx, len(pdf)))
+
+            for i in range(start_idx, end_idx):
+                page = pdf[i]
+                # Render the page at 300 DPI (scale=4.166 for 72dpi base)
+                # Standard PDF is 72 DPI. 300/72 = 4.166
+                bitmap = page.render(scale=4.1666)
+                pil_image = bitmap.to_pil()
+                
+                png_path = output_dir / f"page_{i:03d}.png"
+                pil_image.save(str(png_path), "PNG")
                 png_files.append(png_path)
-                logger.debug(f"Saved page {page_num} to {png_path}")
+                logger.debug(f"Saved page {i} to {png_path}")
 
             console.print(f"[green][OK][/green] Converted {len(png_files)} pages to images")
             return png_files

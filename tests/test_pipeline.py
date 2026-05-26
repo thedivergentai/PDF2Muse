@@ -173,33 +173,32 @@ def test_join_musicxml_files(tmp_path, mock_xml_content):
     assert len(measures) == 2
 
 
-@patch("pdf2muse.core.convert_from_path")
-def test_pdf_to_png(mock_convert, sample_pdf, tmp_path):
-    """Test converting PDF pages to PNG using pdf2image."""
+@patch("pypdfium2.PdfDocument")
+def test_pdf_to_png(mock_pdf_doc, sample_pdf, tmp_path):
+    """Test converting PDF pages to PNG using pypdfium2."""
     output_dir = tmp_path / "images"
     output_dir.mkdir()
     
     # Mock the converted PIL images
-    mock_img_1 = MagicMock()
-    mock_img_2 = MagicMock()
-    mock_convert.return_value = [mock_img_1, mock_img_2]
+    mock_pdf = MagicMock()
+    mock_page = MagicMock()
+    mock_bitmap = MagicMock()
+    mock_pil = MagicMock()
+    
+    mock_pdf_doc.return_value = mock_pdf
+    mock_pdf.__len__.return_value = 2
+    mock_pdf.__getitem__.side_effect = [mock_page, mock_page]
+    mock_page.render.return_value = mock_bitmap
+    mock_bitmap.to_pil.return_value = mock_pil
     
     pipeline = PDF2MusePipeline(
-        pdf_path=str(sample_pdf),
-        poppler_path="/mock/poppler/bin"
+        pdf_path=str(sample_pdf)
     )
     png_files = pipeline.pdf_to_png(output_dir)
     
-    # Assert parameters passed to convert_from_path (using resolved absolute paths)
-    mock_convert.assert_called_once_with(
-        str(sample_pdf), 
-        poppler_path=str(Path("/mock/poppler/bin").resolve())
-    )
-    
     # Assert PNGs are saved
     assert len(png_files) == 2
-    mock_img_1.save.assert_called_once()
-    mock_img_2.save.assert_called_once()
+    assert mock_pil.save.call_count == 2
 
 
 @patch("pdf2muse.core.subprocess.run")
