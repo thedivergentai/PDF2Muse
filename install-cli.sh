@@ -2,7 +2,7 @@
 set -e
 
 echo "==================================================="
-echo "🎶 PDF2Muse - Linux & macOS Installation (UI Default)"
+echo "🎶 PDF2Muse - Linux & macOS Installation (CLI Only)"
 echo "==================================================="
 
 # Check Python installation
@@ -47,13 +47,13 @@ source .venv/bin/activate
 echo "[INFO] Upgrading pip..."
 python3 -m pip install --upgrade pip > /dev/null 2>&1
 
-# Install dependencies (with UI extra by default)
+# Install dependencies (CLI only)
 if [ "$INSTALL_DEV" -eq 1 ]; then
-    echo "[INFO] Installing package in editable mode with WebUI and development extras..."
-    pip install -e .[ui,dev]
+    echo "[INFO] Installing package in editable mode with development extras..."
+    pip install -e .[dev]
 else
-    echo "[INFO] Installing package in editable mode with WebUI extras..."
-    pip install -e .[ui]
+    echo "[INFO] Installing package in editable mode (CLI-only)..."
+    pip install -e .
 fi
 
 # Pre-download model checkpoints
@@ -63,6 +63,6 @@ python3 -m pdf2muse.cli download-models || echo "[WARNING] Model pre-download fa
 echo "==================================================="
 echo "🎉 Installation Successful!"
 echo "==================================================="
-echo "To run the application:"
-echo "  Run: ./run-ui.sh"
+echo "To run the CLI:"
+echo "  Run: pdf2muse convert [options]"
 echo "==================================================="

@@ -20,6 +20,18 @@ if exist .venv\Scripts\activate.bat (
     exit /b 1
 )
 
+:: Check if Gradio is installed (as this launcher runs the WebUI)
+python -c "import gradio" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ===================================================
+    echo [ERROR] Gradio WebUI component was not found in this environment.
+    echo Please install WebUI dependencies by running:
+    echo   install.bat
+    echo and try again.
+    echo ===================================================
+    exit /b 1
+)
+
 :: Pre-flight Diagnostics
 echo [INFO] Performing system environment diagnostics...
 
@@ -44,19 +56,6 @@ if %errorlevel% neq 0 (
     )
 ) else (
     echo [OK] MuseScore 4 detected in system PATH.
-)
-
-:: Check if Gradio is installed (as this launcher runs the WebUI)
-python -c "import gradio" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ===================================================
-    echo [ERROR] Gradio WebUI component was not found in this environment.
-    echo This launcher assumes you want to run the WebUI.
-    echo Please install WebUI dependencies by running:
-    echo   install.bat
-    echo (without the --cli flag) and try again.
-    echo ===================================================
-    exit /b 1
 )
 
 echo [INFO] Launching fully featured WebUI...

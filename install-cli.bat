@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ===================================================
-echo PDF2Muse - Windows Installation Script (UI Default)
+echo PDF2Muse - Windows Installation Script (CLI Only)
 echo ===================================================
 
 :: Check Python installation
@@ -64,13 +64,13 @@ if %errorlevel% neq 0 (
 echo [INFO] Upgrading pip...
 python -m pip install --upgrade pip >nul 2>&1
 
-:: Install dependencies (with UI extra by default)
+:: Install dependencies (CLI only)
 if !INSTALL_DEV! equ 1 (
-    echo [INFO] Installing package in editable mode with WebUI and development extras...
-    pip install -e .[ui,dev]
+    echo [INFO] Installing package in editable mode with development extras...
+    pip install -e .[dev]
 ) else (
-    echo [INFO] Installing package in editable mode with WebUI extras...
-    pip install -e .[ui]
+    echo [INFO] Installing package in editable mode (CLI-only)...
+    pip install -e .
 )
 if %errorlevel% neq 0 (
     echo [ERROR] Dependency installation failed.
@@ -87,6 +87,6 @@ if %errorlevel% neq 0 (
 echo ===================================================
 echo Installation Successful!
 echo ===================================================
-echo To run the application:
-echo   Run: run-ui.bat
+echo To run the CLI:
+echo   Run: pdf2muse convert [options]
 echo ===================================================
