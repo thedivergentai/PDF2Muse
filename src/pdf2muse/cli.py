@@ -194,7 +194,7 @@ def ui(
             show_error=True,
         )
 
-    except ImportError as e:
+    except ImportError:
         console.print("[red]Error:[/red] Gradio is not installed")
         console.print("Install it with: pip install 'pdf2muse[gradio]' or pip install gradio")
         raise typer.Exit(code=1)

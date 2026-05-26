@@ -1,4 +1,3 @@
-import pytest
 from typer.testing import CliRunner
 from pdf2muse.cli import app
 from pdf2muse import __version__

@@ -1,9 +1,6 @@
 """Comprehensive tests for PDF2Muse pipeline."""
 
-import os
 import sys
-import shutil
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch, ANY
 
@@ -11,7 +8,7 @@ import pytest
 import xml.etree.ElementTree as ET
 
 from pdf2muse.core import PDF2MusePipeline
-from pdf2muse.oemer_utils import download_checkpoints, ensure_checkpoints, get_checkpoint_dir
+from pdf2muse.oemer_utils import download_checkpoints, ensure_checkpoints
 from pdf2muse.musicxml import join_musicxml_files, find_musescore_binary, convert_to_musescore_format
 
 
