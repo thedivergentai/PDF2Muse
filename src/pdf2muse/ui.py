@@ -256,99 +256,209 @@ def create_interface(
 ) -> gr.Blocks:
     """Create and return the beautiful, premium Gradio interface."""
     custom_css = """
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Righteous&display=swap');
+    
+    :root {
+        --primary-font: 'Poppins', sans-serif;
+        --title-font: 'Righteous', sans-serif;
+        --color-bg: #0F0F23;
+        --color-surface: rgba(30, 27, 75, 0.45);
+        --color-border: rgba(99, 102, 241, 0.2);
+        --color-border-active: rgba(99, 102, 241, 0.8);
+        --color-accent: #22C55E;
+        --color-text-primary: #F8FAFC;
+        --color-text-muted: #94A3B8;
+        --glass-shadow: 0 8px 32px 0 rgba(15, 15, 35, 0.37);
+        --glass-blur: blur(12px);
+    }
+    
+    body, .gradio-container {
+        font-family: var(--primary-font) !important;
+        background-color: var(--color-bg) !important;
+        background-image: radial-gradient(circle at 10% 20%, rgba(90, 28, 135, 0.15) 0%, transparent 45%),
+                          radial-gradient(circle at 90% 80%, rgba(67, 56, 202, 0.1) 0%, transparent 50%) !important;
+        color: var(--color-text-primary) !important;
+    }
+    
     .container {
         max-width: 1100px !important;
         margin: 0 auto !important;
+        padding: 10px !important;
     }
+    
+    /* Header Banner */
     .header-banner {
-        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #1e1b4b 100%) !important;
-        color: white !important;
-        padding: 40px !important;
+        background: linear-gradient(135deg, rgba(88, 28, 135, 0.5) 0%, rgba(30, 27, 75, 0.75) 100%) !important;
+        backdrop-filter: var(--glass-blur) !important;
+        -webkit-backdrop-filter: var(--glass-blur) !important;
+        border: 1px solid var(--color-border) !important;
         border-radius: 24px !important;
+        padding: 40px 30px !important;
         margin-bottom: 30px !important;
-        box-shadow: 0 20px 40px -15px rgba(124, 58, 237, 0.5) !important;
-        border: 1px solid rgba(255, 255, 255, 0.15) !important;
-        text-align: center !important;
+        box-shadow: var(--glass-shadow), 0 0 40px rgba(88, 28, 135, 0.15) !important;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
     }
+    
+    .header-content {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+    }
+    
+    .header-logo {
+        width: 42px;
+        height: 42px;
+        color: var(--color-accent);
+        filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.5));
+    }
+    
     .header-banner h1 {
+        font-family: var(--title-font) !important;
         font-size: 3.2rem !important;
-        font-weight: 900 !important;
+        font-weight: normal !important;
         margin: 0 !important;
-        letter-spacing: -0.04em !important;
-        text-shadow: 0 4px 8px rgba(0, 0, 0, 0.3) !important;
+        background: linear-gradient(to right, #FFFFFF, #C084FC) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        letter-spacing: -0.01em !important;
     }
+    
     .header-banner p {
-        font-size: 1.3rem !important;
-        opacity: 0.9 !important;
-        margin-top: 15px !important;
-        font-weight: 300 !important;
-    }
-    .convert-btn {
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
         font-size: 1.15rem !important;
-        padding: 14px 28px !important;
-        background: linear-gradient(90deg, #7c3aed 0%, #4f46e5 100%) !important;
-        border: none !important;
-        font-weight: bold !important;
-        color: white !important;
-        border-radius: 12px !important;
+        color: var(--color-text-muted) !important;
+        max-width: 680px !important;
+        margin: 12px 0 0 0 !important;
+        line-height: 1.6 !important;
     }
-    .convert-btn:hover {
-        transform: translateY(-3px) !important;
-        box-shadow: 0 12px 30px -8px rgba(99, 102, 241, 0.7) !important;
-        filter: brightness(1.15) !important;
-    }
-    .download-card {
+    
+    /* Panels / Accordions / Tabs */
+    .block, .gr-box, .accordion, .glass-tab {
+        background: var(--color-surface) !important;
+        backdrop-filter: var(--glass-blur) !important;
+        -webkit-backdrop-filter: var(--glass-blur) !important;
+        border: 1px solid var(--color-border) !important;
         border-radius: 16px !important;
-        border: 1px solid rgba(124, 58, 237, 0.25) !important;
-        background: rgba(255, 255, 255, 0.05) !important;
-        backdrop-filter: blur(10px) !important;
+        box-shadow: var(--glass-shadow) !important;
+        transition: all 0.3s ease !important;
         padding: 20px !important;
     }
-    .glass-tab {
-        background: rgba(255, 255, 255, 0.02) !important;
+    
+    .accordion:hover {
+        border-color: rgba(99, 102, 241, 0.3) !important;
+    }
+    
+    /* Form input styling */
+    input[type="text"], input[type="number"], textarea {
+        background: rgba(15, 15, 35, 0.5) !important;
+        border: 1px solid var(--color-border) !important;
+        border-radius: 10px !important;
+        color: var(--color-text-primary) !important;
+        transition: all 0.25s ease !important;
+    }
+    
+    input[type="text"]:focus, input[type="number"]:focus {
+        border-color: var(--color-border-active) !important;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2) !important;
+    }
+    
+    /* Custom Convert Button */
+    .convert-btn {
+        font-family: var(--primary-font) !important;
+        font-weight: 600 !important;
+        font-size: 1.15rem !important;
+        padding: 14px 28px !important;
+        border-radius: 12px !important;
+        background: linear-gradient(135deg, var(--color-accent) 0%, #10B981 100%) !important;
+        color: #052E16 !important;
+        border: none !important;
+        box-shadow: 0 4px 15px rgba(34, 197, 94, 0.25) !important;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        cursor: pointer !important;
+    }
+    
+    .convert-btn:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 10px 25px rgba(34, 197, 94, 0.45) !important;
+        filter: brightness(1.05) !important;
+    }
+    
+    .convert-btn:active {
+        transform: translateY(0) !important;
+    }
+    
+    /* Muted and Download Areas */
+    .download-card {
+        padding: 20px !important;
+        background: rgba(15, 15, 35, 0.35) !important;
+        border: 1px solid rgba(99, 102, 241, 0.15) !important;
         border-radius: 16px !important;
-        border: 1px solid rgba(255, 255, 255, 0.05) !important;
-        padding: 25px !important;
-        margin-top: 15px !important;
+    }
+    
+    /* Footer section line */
+    .divider {
+        margin: 40px 0;
+        border: 0;
+        border-top: 1px solid rgba(99, 102, 241, 0.15);
+    }
+    
+    .requirement-card {
+        padding: 20px;
+        background: rgba(30, 27, 75, 0.2);
+        border-radius: 12px;
+        border-left: 4px solid #C084FC;
+    }
+    
+    .tip-card {
+        padding: 20px;
+        background: rgba(16, 185, 129, 0.05);
+        border-radius: 12px;
+        border-left: 4px solid var(--color-accent);
     }
     """
-
-    with gr.Blocks(
-        title="PDF2Muse - Sheet Music Converter",
-        theme=gr.themes.Soft(
-            primary_hue="purple",
-            secondary_hue="indigo",
-            font=("Outfit", "Inter", "sans-serif"),
-        ),
-        css=custom_css,
-    ) as interface:
+ 
+    interface = gr.Blocks(title="PDF2Muse - Sheet Music Converter")
+    interface.css = custom_css
+    
+    with interface:
         
         with gr.Column(elem_classes="container"):
-            # Premium Header Banner
+            # Header
             gr.HTML(
                 """
                 <div class="header-banner">
-                    <h1>🎶 PDF2Muse</h1>
-                    <p>Convert scanned PDF sheet music into digital, editable MusicXML & MuseScore files using Optical Music Recognition (OMR).</p>
+                    <div class="header-content">
+                        <svg class="header-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 18V5l12-2v13"></path>
+                            <circle cx="6" cy="18" r="3"></circle>
+                            <circle cx="18" cy="16" r="3"></circle>
+                        </svg>
+                        <h1>PDF2Muse</h1>
+                    </div>
+                    <p>Convert scanned PDF sheet music into digital, editable MusicXML & MuseScore files using advanced AI-powered Optical Music Recognition.</p>
                 </div>
                 """
             )
-
+ 
             # Tabbed Design
             with gr.Tabs():
                 
                 # Tab 1: Single Conversion
-                with gr.TabItem("🎼 Single Score Conversion"):
+                with gr.TabItem("Single Score Conversion"):
                     with gr.Row(elem_classes="glass-tab"):
                         with gr.Column(scale=11):
                             pdf_input = gr.File(
-                                label="📄 Upload PDF Sheet Music",
+                                label="Upload PDF Sheet Music",
                                 file_types=[".pdf"],
                                 type="filepath",
                             )
-
-                            with gr.Accordion("⚙️ Environment & Settings", open=True):
+ 
+                            with gr.Accordion("Environment & Settings", open=True):
                                 with gr.Group():
                                     poppler_input = gr.Textbox(
                                         label="Poppler Bin Path",
@@ -362,7 +472,7 @@ def create_interface(
                                         placeholder="e.g. C:\\Program Files\\MuseScore 4\\bin\\MuseScore4.exe (Optional if in PATH)",
                                         info="Exact path to your MuseScore executable",
                                     )
-
+ 
                                 with gr.Row():
                                     first_page_input = gr.Number(
                                         label="First Page",
@@ -376,7 +486,7 @@ def create_interface(
                                         precision=0,
                                         info="1-indexed, leave 0 for end",
                                     )
-
+ 
                                 with gr.Row():
                                     deskew_checkbox = gr.Checkbox(
                                         label="Enable Deskewing",
@@ -388,20 +498,20 @@ def create_interface(
                                         value=False,
                                         info="Use CPU/GPU TensorFlow engine instead of default ONNX Runtime",
                                     )
-
+ 
                             convert_button = gr.Button(
-                                "🎵 Recognize & Convert Sheet Music",
+                                "Recognize & Convert Sheet Music",
                                 variant="primary",
                                 elem_classes="convert-btn",
                             )
-
+ 
                         with gr.Column(scale=9):
                             status_output = gr.Markdown(
-                                value="### 📥 Awaiting Input\nUpload a PDF file and press the button to begin transcription.",
+                                value="### Awaiting Input\nUpload a PDF file and press the button to begin transcription.",
                             )
-
+ 
                             with gr.Group(elem_classes="download-card"):
-                                gr.Markdown("### 📂 Generated Outputs")
+                                gr.Markdown("### Generated Outputs")
                                 musicxml_output = gr.File(
                                     label="Download MusicXML (.musicxml)",
                                     interactive=False,
@@ -410,19 +520,19 @@ def create_interface(
                                     label="Download MuseScore File (.mscx)",
                                     interactive=False,
                                 )
-
+ 
                 # Tab 2: Batch Conversion
-                with gr.TabItem("📚 Batch Processing"):
+                with gr.TabItem("Batch Processing"):
                     with gr.Row(elem_classes="glass-tab"):
                         with gr.Column(scale=11):
                             batch_input = gr.File(
-                                label="📂 Upload Multiple Sheet Music PDFs",
+                                label="Upload Multiple Sheet Music PDFs",
                                 file_types=[".pdf"],
                                 file_count="multiple",
                                 type="filepath",
                             )
                             
-                            with gr.Accordion("⚙️ Batch Processing Settings", open=False):
+                            with gr.Accordion("Batch Processing Settings", open=False):
                                 batch_deskew = gr.Checkbox(
                                     label="Enable Deskewing",
                                     value=True,
@@ -431,31 +541,31 @@ def create_interface(
                                     label="Use TensorFlow",
                                     value=False,
                                 )
-
+ 
                             batch_button = gr.Button(
-                                "⚡ Convert Batch Scores (Outputs Zipped)",
+                                "Convert Batch Scores (Outputs Zipped)",
                                 variant="primary",
                                 elem_classes="convert-btn",
                             )
-
+ 
                         with gr.Column(scale=9):
                             batch_status = gr.Markdown(
-                                value="### 📥 Awaiting Batch Files\nUpload multiple PDF files to queue them for Optical Music Recognition.",
+                                value="### Awaiting Batch Files\nUpload multiple PDF files to queue them for Optical Music Recognition.",
                             )
                             
                             with gr.Group(elem_classes="download-card"):
-                                gr.Markdown("### 📦 Zipped Batch Output")
+                                gr.Markdown("### Zipped Batch Output")
                                 batch_zip_output = gr.File(
                                     label="Download All Transcribed Scores (.zip)",
                                     interactive=False,
                                 )
-
+ 
                 # Tab 3: Model Manager
-                with gr.TabItem("🧠 Model Checkpoints Manager"):
+                with gr.TabItem("Model Checkpoints Manager"):
                     with gr.Column(elem_classes="glass-tab"):
                         gr.Markdown(
                             """
-                            ### 🤖 Manage OMR Model Checkpoints
+                            ### Manage OMR Model Checkpoints
                             
                             PDF2Muse utilizes two pre-trained deep learning networks under the hood:
                             - **`unet_big`**: Layout analysis, staff line segmentation.
@@ -465,44 +575,51 @@ def create_interface(
                             """
                         )
                         model_status = gr.Markdown(value="*Status: Model checkpoints will be checked during pre-flight diagnostics.*")
-                        download_btn = gr.Button("⬇️ Download Checkpoints Now", variant="secondary")
-
+                        download_btn = gr.Button("Download Checkpoints Now", variant="secondary")
+ 
                 # Tab 4: System Diagnostics
-                with gr.TabItem("🛡️ Pre-Flight Diagnostics"):
+                with gr.TabItem("Pre-Flight Diagnostics"):
                     with gr.Column(elem_classes="glass-tab"):
-                        gr.Markdown("### 🔍 System Environment Diagnostics")
+                        gr.Markdown("### System Environment Diagnostics")
                         diag_output = gr.Markdown(value="*Click 'Run System Check' to query system variables and detect dependency installations.*")
-                        diag_btn = gr.Button("⚡ Run System Check", variant="secondary")
-
+                        diag_btn = gr.Button("Run System Check", variant="secondary")
+ 
             gr.HTML(
                 """
-                <hr style="margin: 40px 0; border: 0; border-top: 1px solid rgba(124, 58, 237, 0.15);" />
+                <hr class="divider" />
                 """
             )
-
+ 
             # Footer / Explainer Section
             with gr.Row():
-                with gr.Column():
-                    gr.Markdown(
+                with gr.Column(scale=1):
+                    gr.HTML(
                         """
-                        ### ⚙️ Requirements & System Preparation
-                        
-                        PDF2Muse relies on native system libraries for best performance:
-                        1. **Poppler** (Required): Converts PDF pages to clean high-resolution OMR images.
-                           - *Windows*: Download from [poppler-windows](https://github.com/oschwartz10612/poppler-windows/releases) and paste the `bin` path into the setting above.
-                           - *macOS*: Install via Homebrew: `brew install poppler`
-                        2. **MuseScore** (Optional): Converts MusicXML into MuseScore format natively.
-                           - Install MuseScore 4 or 3. It is automatically detected if installed in standard directories.
-                        
-                        ### 🎯 Tips for Peak Recognition Quality
-                        
-                        For maximum optical music recognition (OMR) accuracy:
-                        - **Scan DPI**: Use clear sheets scanned at 300 DPI or higher.
-                        - **Western Notation**: Avoid handwritten, tab, chord-only, or unconventional scores.
-                        - **Lighting**: Bright, shadow-free, and high-contrast digital sheets work best.
+                        <div class="requirement-card">
+                            <h3 style="margin-top: 0; color: #FFFFFF; font-family: 'Poppins', sans-serif;">System Preparation</h3>
+                            <p style="color: #94A3B8; font-size: 0.95rem; line-height: 1.6;">PDF2Muse relies on native system libraries for best performance:</p>
+                            <ul style="color: #94A3B8; font-size: 0.95rem; line-height: 1.6; padding-left: 20px;">
+                                <li><strong>Poppler</strong>: Converts PDF pages to clean high-resolution OMR images. Pasting the <code>bin</code> path is recommended on Windows.</li>
+                                <li><strong>MuseScore</strong>: Converts MusicXML into MuseScore format natively.</li>
+                            </ul>
+                        </div>
                         """
                     )
-
+                with gr.Column(scale=1):
+                    gr.HTML(
+                        """
+                        <div class="tip-card">
+                            <h3 style="margin-top: 0; color: #FFFFFF; font-family: 'Poppins', sans-serif;">Peak Recognition Quality</h3>
+                            <p style="color: #94A3B8; font-size: 0.95rem; line-height: 1.6;">For maximum OMR accuracy:</p>
+                            <ul style="color: #94A3B8; font-size: 0.95rem; line-height: 1.6; padding-left: 20px;">
+                                <li>Use clear sheets scanned at 300 DPI or higher.</li>
+                                <li>Avoid handwritten, tab, chord-only, or unconventional scores.</li>
+                                <li>Ensure bright, shadow-free, and high-contrast digital sheets.</li>
+                            </ul>
+                        </div>
+                        """
+                    )
+ 
         # Wire up single convert event handler
         convert_button.click(
             fn=convert_pdf,
