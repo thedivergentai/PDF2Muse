@@ -33,11 +33,19 @@ if !major! equ 3 (
 
 echo [OK] Python version !major!.!minor! detected.
 
-:: Parse argument --dev
+:: Parse arguments
 set INSTALL_DEV=0
-if "%1"=="--dev" (
-    set INSTALL_DEV=1
+set INSTALL_CLI=0
+for %%x in (%*) do (
+    if "%%x"=="--dev" set "INSTALL_DEV=1"
+    if "%%x"=="--cli" set "INSTALL_CLI=1"
+)
+
+if !INSTALL_DEV! equ 1 (
     echo [INFO] Running in Developer / Contributor mode.
+)
+if !INSTALL_CLI! equ 1 (
+    echo [INFO] Running in CLI-only mode.
 )
 
 :: Create Virtual Environment if not exists
@@ -66,11 +74,21 @@ python -m pip install --upgrade pip >nul 2>&1
 
 :: Install dependencies
 if !INSTALL_DEV! equ 1 (
-    echo [INFO] Installing package in editable mode with development extras...
-    pip install -e .[dev]
+    if !INSTALL_CLI! equ 1 (
+        echo [INFO] Installing package in editable mode with development extras...
+        pip install -e .[dev]
+    ) else (
+        echo [INFO] Installing package in editable mode with WebUI and development extras...
+        pip install -e .[ui,dev]
+    )
 ) else (
-    echo [INFO] Installing package in editable mode...
-    pip install -e .
+    if !INSTALL_CLI! equ 1 (
+        echo [INFO] Installing package in editable mode (CLI-only)...
+        pip install -e .
+    ) else (
+        echo [INFO] Installing package in editable mode with WebUI extras...
+        pip install -e .[ui]
+    )
 )
 if %errorlevel% neq 0 (
     echo [ERROR] Dependency installation failed.

@@ -24,12 +24,19 @@ fi
 
 echo "[OK] Python version $PYTHON_VERSION detected."
 
-# Parse argument --dev
+# Parse arguments
 INSTALL_DEV=0
-if [ "$1" == "--dev" ]; then
-    INSTALL_DEV=1
-    echo "[INFO] Running in Developer / Contributor mode."
-fi
+INSTALL_CLI=0
+for arg in "$@"; do
+    if [ "$arg" == "--dev" ]; then
+        INSTALL_DEV=1
+        echo "[INFO] Running in Developer / Contributor mode."
+    fi
+    if [ "$arg" == "--cli" ]; then
+        INSTALL_CLI=1
+        echo "[INFO] Running in CLI-only mode."
+    fi
+done
 
 # Create Virtual Environment if not exists
 if [ ! -d ".venv" ]; then
@@ -49,11 +56,21 @@ python3 -m pip install --upgrade pip > /dev/null 2>&1
 
 # Install dependencies
 if [ "$INSTALL_DEV" -eq 1 ]; then
-    echo "[INFO] Installing package in editable mode with development extras..."
-    pip install -e .[dev]
+    if [ "$INSTALL_CLI" -eq 1 ]; then
+        echo "[INFO] Installing package in editable mode with development extras..."
+        pip install -e .[dev]
+    else
+        echo "[INFO] Installing package in editable mode with WebUI and development extras..."
+        pip install -e .[ui,dev]
+    fi
 else
-    echo "[INFO] Installing package in editable mode..."
-    pip install -e .
+    if [ "$INSTALL_CLI" -eq 1 ]; then
+        echo "[INFO] Installing package in editable mode (CLI-only)..."
+        pip install -e .
+    else
+        echo "[INFO] Installing package in editable mode with WebUI extras..."
+        pip install -e .[ui]
+    fi
 fi
 
 # Pre-download model checkpoints

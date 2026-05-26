@@ -34,5 +34,17 @@ else
     echo "[OK] MuseScore detected in system PATH."
 fi
 
+# Check if Gradio is installed (as this launcher runs the WebUI)
+if ! python3 -c "import gradio" &> /dev/null; then
+    echo "==================================================="
+    echo "[ERROR] Gradio WebUI component was not found in this environment."
+    echo "This launcher assumes you want to run the WebUI."
+    echo "Please install WebUI dependencies by running:"
+    echo "  ./install.sh"
+    echo "(without the --cli flag) and try again."
+    echo "==================================================="
+    exit 1
+fi
+
 echo "[INFO] Launching fully featured WebUI..."
 python -m pdf2muse.cli ui

@@ -31,10 +31,12 @@ dependencies = [
     "rich>=13.0.0",
     "Pillow>=10.0.0",
     "requests>=2.0.0",
-    "gradio>=4.0.0",
 ]
 
 [project.optional-dependencies]
+ui = [
+    "gradio>=4.0.0",
+]
 dev = [
     "pytest>=7.0.0",
     "black>=23.0.0",
