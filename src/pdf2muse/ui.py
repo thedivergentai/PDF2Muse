@@ -6,113 +6,316 @@ import sys
 import tempfile
 import zipfile
 import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Generator, Iterator, List, Optional, Tuple
 
 import gradio as gr
 from rich.console import Console
 
+from .cli import configure_windows_stdio
 from .core import PDF2MusePipeline
-from .musicxml import find_musescore_binary
-from .oemer_utils import download_checkpoints, get_checkpoint_dir
+from .musicxml import convert_to_musescore_format, find_musescore_binary, join_musicxml_files
+from .oemer_utils import download_checkpoints, ensure_checkpoints, get_checkpoint_dir
+
+configure_windows_stdio()
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+# Type alias for handler return streams (generators yield tuples; early exits return once).
+ConvertSingleYield = Tuple[str, Optional[str], Optional[str], dict, dict]
+ConvertBatchYield = Tuple[str, Optional[str], dict, dict]
+
+_DOWNLOAD_SKELETON_ACTIVE = (
+    '<div class="download-skeleton is-active" role="status" aria-live="polite" '
+    'aria-label="Generating output files">'
+    '<div class="skeleton-line skeleton-line--wide"></div>'
+    '<div class="skeleton-line skeleton-line--medium"></div>'
+    '<div class="skeleton-line skeleton-line--narrow"></div>'
+    "</div>"
+)
+
+_DOWNLOAD_SKELETON_IDLE = '<div class="download-skeleton" aria-hidden="true"></div>'
+
+
+def _btn_busy() -> dict:
+    return gr.update(interactive=False, elem_classes=["convert-btn", "is-busy"])
+
+
+def _btn_ready() -> dict:
+    return gr.update(interactive=True, elem_classes=["convert-btn"])
+
+
+def _md_loading(title: str, detail: str) -> str:
+    return (
+        f"### {title}\n\n"
+        f"{detail}\n\n"
+        "*OMR can take several minutes per page on CPU. Keep this tab open.*"
+    )
+
+
+def _md_success(has_mscx: bool) -> str:
+    if has_mscx:
+        return (
+            "### Conversion complete\n\n"
+            "Both **MusicXML** and **MuseScore** files are ready for download below."
+        )
+    return (
+        "### Conversion complete\n\n"
+        "**MusicXML** is ready below. MuseScore was not detected or `.mscx` export was "
+        "skipped—you can import the MusicXML into MuseScore or another notation editor."
+    )
+
+
+def _format_conversion_error(exc: Exception) -> str:
+    """Build a user-facing markdown error message."""
+    msg = str(exc).strip()
+    if "\n" in msg or len(msg) > 120:
+        return f"### Error during conversion\n\n**Details:**\n\n```\n{msg}\n```"
+    return f"### Error during conversion\n\n`{msg}`"
+
+
+def _uploaded_file_path(file_obj: object) -> str:
+    """Return the server-side path for Gradio upload objects."""
+    for attr in ("path", "name"):
+        value = getattr(file_obj, attr, None)
+        if isinstance(value, (str, Path)) and str(value):
+            return str(value)
+
+    return str(file_obj)
+
+
+def _orchestrate_pipeline(
+    pipeline: PDF2MusePipeline,
+    output_dir: Path,
+    progress: Optional[gr.Progress] = None,
+) -> Iterator[str]:
+    """
+    Run conversion steps with incremental status messages.
+
+    Yields markdown status strings; caller handles file copying after completion.
+    """
+    def tick(frac: float, desc: str) -> None:
+        if progress is not None:
+            try:
+                progress(frac, desc=desc)
+            except Exception:
+                pass
+
+    tick(0.04, "Preparing")
+    yield _md_loading("Preparing", "Checking OMR model checkpoints…")
+    ensure_checkpoints()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        image_dir = temp_path / "images"
+        musicxml_dir = temp_path / "musicxml"
+        image_dir.mkdir(parents=True, exist_ok=True)
+        musicxml_dir.mkdir(parents=True, exist_ok=True)
+
+        tick(0.12, "PDF to images")
+        yield _md_loading("Converting PDF", "Rendering pages to images…")
+        png_files = pipeline.pdf_to_png(image_dir)
+        total = len(png_files)
+
+        if total == 0:
+            raise RuntimeError("No pages were rendered from the PDF.")
+
+        tick(0.22, "OMR")
+        yield _md_loading("Running OMR", f"Processing page **0 / {total}**…")
+
+        max_workers = min(4, max(1, (os.cpu_count() or 2) // 2))
+        results: list[Optional[Path]] = [None] * total
+        page_errors: list[str] = []
+        completed = 0
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    pipeline.process_image_with_oemer, png, musicxml_dir
+                ): (idx, png.name)
+                for idx, png in enumerate(png_files)
+            }
+            for future in as_completed(futures):
+                idx, filename = futures[future]
+                try:
+                    musicxml_file, err = future.result()
+                    if musicxml_file:
+                        results[idx] = musicxml_file
+                    elif err:
+                        page_errors.append(err)
+                except Exception as e:
+                    page_errors.append(f"{filename}: {e}")
+                    logger.error("Error processing page %s: %s", filename, e)
+
+                completed += 1
+                frac = 0.22 + 0.58 * (completed / total)
+                tick(frac, f"OMR {completed}/{total}")
+                yield _md_loading(
+                    "Running OMR",
+                    f"Completed **{completed} / {total}** pages (latest: `{filename}`)…",
+                )
+
+        musicxml_files = [r for r in results if r is not None]
+        if not musicxml_files:
+            detail = "\n".join(page_errors) if page_errors else "Unknown error"
+            raise RuntimeError(f"No MusicXML files were generated.\n{detail}")
+
+        tick(0.84, "Joining MusicXML")
+        yield _md_loading("Joining MusicXML", "Merging per-page results into one score…")
+        combined_musicxml = output_dir / "combined.musicxml"
+        join_musicxml_files(musicxml_dir, combined_musicxml)
+
+        tick(0.93, "MuseScore export")
+        yield _md_loading(
+            "MuseScore export",
+            "Converting to native `.mscx` when MuseScore is available…",
+        )
+        musescore_file = output_dir / "combined.mscx"
+        try:
+            convert_to_musescore_format(
+                combined_musicxml,
+                musescore_file,
+                musescore_path=pipeline.musescore_path,
+            )
+        except Exception as e:
+            logger.warning("MuseScore conversion skipped: %s", e)
 
 
 def convert_pdf(
     pdf_file: gr.File,
     deskew: bool = True,
     use_tf: bool = False,
-    poppler_path: Optional[str] = None,
     musescore_path: Optional[str] = None,
     first_page: Optional[int] = None,
     last_page: Optional[int] = None,
-) -> Tuple[str, Optional[str], Optional[str]]:
-    """Convert a single PDF to MusicXML and MuseScore format."""
+    progress: gr.Progress = gr.Progress(track_tqdm=False),
+) -> Generator[ConvertSingleYield, None, None]:
+    """Convert a single PDF to MusicXML and MuseScore format with live progress."""
     if pdf_file is None:
-        return "### ❌ Please upload a PDF file first", None, None
+        yield (
+            "### Please upload a PDF file first\n\n"
+            "Choose a scanned sheet-music PDF, then run conversion.",
+            None,
+            None,
+            _DOWNLOAD_SKELETON_IDLE,
+            _btn_ready(),
+        )
+        return
 
-    # Clear empty string paths and zero limits
-    poppler_path = poppler_path.strip() if poppler_path else None
     musescore_path = musescore_path.strip() if musescore_path else None
     first_page = int(first_page) if first_page and int(first_page) > 0 else None
     last_page = int(last_page) if last_page and int(last_page) > 0 else None
 
+    yield (
+        _md_loading("Preparing", "Starting conversion pipeline…"),
+        None,
+        None,
+        _DOWNLOAD_SKELETON_ACTIVE,
+        _btn_busy(),
+    )
+
     try:
-        # Create a temporary output directory
         with tempfile.TemporaryDirectory() as temp_dir:
             output_dir = Path(temp_dir) / "output"
-            output_dir.mkdir()
+            output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Get the uploaded file path
-            pdf_path = pdf_file.name if hasattr(pdf_file, 'name') else pdf_file
+            pdf_path = _uploaded_file_path(pdf_file)
 
-            # Run the pipeline
             pipeline = PDF2MusePipeline(
                 pdf_path=pdf_path,
                 output_dir=str(output_dir),
                 deskew=deskew,
                 use_tf=use_tf,
-                poppler_path=poppler_path,
                 musescore_path=musescore_path,
                 first_page=first_page,
                 last_page=last_page,
             )
 
-            pipeline.run()
+            for status_msg in _orchestrate_pipeline(pipeline, output_dir, progress):
+                yield (
+                    status_msg,
+                    None,
+                    None,
+                    _DOWNLOAD_SKELETON_ACTIVE,
+                    _btn_busy(),
+                )
 
-            # Copy generated files to persistent locations so Gradio can serve them
+            progress(0.98, desc="Finalizing downloads")
+
             xml_src = output_dir / "combined.musicxml"
             mscx_src = output_dir / "combined.mscx"
-
-            xml_dest = None
-            mscx_dest = None
+            xml_dest: Optional[str] = None
+            mscx_dest: Optional[str] = None
 
             if xml_src.exists():
-                xml_dest = Path(tempfile.gettempdir()) / f"pdf2muse_{xml_src.name}"
-                shutil.copy(xml_src, xml_dest)
-                xml_dest = str(xml_dest)
+                dest = Path(tempfile.gettempdir()) / f"pdf2muse_{xml_src.name}"
+                shutil.copy(xml_src, dest)
+                xml_dest = str(dest)
 
             if mscx_src.exists():
-                mscx_dest = Path(tempfile.gettempdir()) / f"pdf2muse_{mscx_src.name}"
-                shutil.copy(mscx_src, mscx_dest)
-                mscx_dest = str(mscx_dest)
+                dest = Path(tempfile.gettempdir()) / f"pdf2muse_{mscx_src.name}"
+                shutil.copy(mscx_src, dest)
+                mscx_dest = str(dest)
 
-            status_msg = "## ✨ Conversion Complete!\n\n"
-            if mscx_dest:
-                status_msg += "🎉 **Success!** Both **MusicXML** and **MuseScore** files have been successfully generated and are ready for download below."
-            else:
-                status_msg += "💡 **MusicXML created successfully!** \n\n" \
-                             "*(Note: MuseScore was not auto-detected or conversion failed, so .mscx format was skipped. " \
-                             "You can import this .musicxml file directly into MuseScore or other sheet music editors).* "
-
-            return status_msg, xml_dest, mscx_dest
+            progress(1.0, desc="Complete")
+            yield (
+                _md_success(mscx_dest is not None),
+                xml_dest,
+                mscx_dest,
+                _DOWNLOAD_SKELETON_IDLE,
+                _btn_ready(),
+            )
 
     except FileNotFoundError as e:
-        logger.error(f"File not found: {e}")
-        return f"### ❌ Error: {e}", None, None
+        logger.error("File not found: %s", e)
+        yield (
+            f"### Error: file not found\n\n`{e}`\n\n"
+            "Check that the upload completed and try again.",
+            None,
+            None,
+            _DOWNLOAD_SKELETON_IDLE,
+            _btn_ready(),
+        )
 
     except Exception as e:
-        logger.error(f"Conversion error: {e}", exc_info=True)
-        return f"### ❌ Error during conversion:\n\n`{str(e)}`", None, None
+        logger.error("Conversion error: %s", e, exc_info=True)
+        yield (
+            _format_conversion_error(e),
+            None,
+            None,
+            _DOWNLOAD_SKELETON_IDLE,
+            _btn_ready(),
+        )
 
 
 def convert_batch_pdfs(
     pdf_files: List[gr.File],
     deskew: bool = True,
     use_tf: bool = False,
-    poppler_path: Optional[str] = None,
     musescore_path: Optional[str] = None,
-) -> Tuple[str, Optional[str]]:
-    """Convert multiple PDFs in batch and return a ZIP file containing all outputs."""
+    first_page: Optional[int] = None,
+    last_page: Optional[int] = None,
+    progress: gr.Progress = gr.Progress(track_tqdm=False),
+) -> Generator[ConvertBatchYield, None, None]:
+    """Convert multiple PDFs in batch with live progress; returns a ZIP of outputs."""
     if not pdf_files:
-        return "### ❌ Please upload one or more PDF files first", None
+        yield (
+            "### Please upload one or more PDF files first\n\n"
+            "Add multiple PDFs to the batch queue, then start conversion.",
+            None,
+            _DOWNLOAD_SKELETON_IDLE,
+            _btn_ready(),
+        )
+        return
 
-    poppler_path = poppler_path.strip() if poppler_path else None
     musescore_path = musescore_path.strip() if musescore_path else None
+    first_page = int(first_page) if first_page and int(first_page) > 0 else None
+    last_page = int(last_page) if last_page and int(last_page) > 0 else None
 
-    log_output = "### 📚 Starting Batch Conversion...\n\n"
+    total_files = len(pdf_files)
+    log_output = "### Starting batch conversion\n\n"
     temp_zip_dir = Path(tempfile.gettempdir()) / "pdf2muse_batch"
     if temp_zip_dir.exists():
         shutil.rmtree(temp_zip_dir)
@@ -121,30 +324,52 @@ def convert_batch_pdfs(
     success_count = 0
     fail_count = 0
 
+    yield (
+        log_output + _md_loading("Preparing batch", f"Queued **{total_files}** files…"),
+        None,
+        _DOWNLOAD_SKELETON_ACTIVE,
+        _btn_busy(),
+    )
+
     for i, file_obj in enumerate(pdf_files):
-        pdf_path = file_obj.name if hasattr(file_obj, 'name') else file_obj
+        pdf_path = _uploaded_file_path(file_obj)
         pdf_name = Path(pdf_path).name
-        log_output += f"🔄 **[{i+1}/{len(pdf_files)}]** Processing `{pdf_name}`...\n"
+        file_frac = i / total_files
+        progress(file_frac, desc=f"Batch {i + 1}/{total_files}")
+
+        log_output += f"\n**[{i + 1}/{total_files}]** Processing `{pdf_name}`…\n"
+        yield (
+            log_output + _md_loading("Processing file", f"Working on `{pdf_name}`…"),
+            None,
+            _DOWNLOAD_SKELETON_ACTIVE,
+            _btn_busy(),
+        )
 
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 output_dir = Path(temp_dir) / "output"
-                output_dir.mkdir()
+                output_dir.mkdir(parents=True, exist_ok=True)
 
                 pipeline = PDF2MusePipeline(
                     pdf_path=pdf_path,
                     output_dir=str(output_dir),
                     deskew=deskew,
                     use_tf=use_tf,
-                    poppler_path=poppler_path,
                     musescore_path=musescore_path,
+                    first_page=first_page,
+                    last_page=last_page,
                 )
-                pipeline.run()
 
-                # Move files to batch zip folder
+                for step_status in _orchestrate_pipeline(pipeline, output_dir, progress):
+                    yield (
+                        log_output + step_status,
+                        None,
+                        _DOWNLOAD_SKELETON_ACTIVE,
+                        _btn_busy(),
+                    )
+
                 xml_src = output_dir / "combined.musicxml"
                 mscx_src = output_dir / "combined.mscx"
-
                 file_prefix = Path(pdf_name).stem
                 if xml_src.exists():
                     shutil.copy(xml_src, temp_zip_dir / f"{file_prefix}.musicxml")
@@ -152,57 +377,80 @@ def convert_batch_pdfs(
                     shutil.copy(mscx_src, temp_zip_dir / f"{file_prefix}.mscx")
 
                 success_count += 1
-                log_output += f"  - ✅ Completed `{pdf_name}`\n"
+                log_output += f"- Completed `{pdf_name}`\n"
+
         except Exception as e:
             fail_count += 1
-            log_output += f"  - ❌ Failed `{pdf_name}`: `{str(e)}`\n"
+            err = str(e).strip()
+            if "\n" in err:
+                log_output += f"- Failed `{pdf_name}`:\n```\n{err}\n```\n"
+            else:
+                log_output += f"- Failed `{pdf_name}`: `{err}`\n"
+
+        yield (
+            log_output,
+            None,
+            _DOWNLOAD_SKELETON_ACTIVE,
+            _btn_busy(),
+        )
 
     if success_count == 0:
-        return log_output + "\n### ❌ All batch conversions failed.", None
+        yield (
+            log_output + "\n### All batch conversions failed\n\n"
+            "Review errors above, fix inputs, and try again.",
+            None,
+            _DOWNLOAD_SKELETON_IDLE,
+            _btn_ready(),
+        )
+        return
 
-    # Create ZIP archive
+    progress(0.95, desc="Creating ZIP archive")
     zip_path = Path(tempfile.gettempdir()) / "pdf2muse_batch_outputs.zip"
     if zip_path.exists():
         os.remove(zip_path)
 
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
         for root, _, files in os.walk(temp_zip_dir):
             for file in files:
                 zipf.write(os.path.join(root, file), file)
 
     shutil.rmtree(temp_zip_dir)
+    progress(1.0, desc="Batch complete")
 
-    summary = f"\n### 🎉 Batch Processing Complete!\n- **Succeeded:** {success_count}\n- **Failed:** {fail_count}\n\nDownload all generated files using the link below."
-    return log_output + summary, str(zip_path)
+    summary = (
+        f"\n### Batch processing complete\n"
+        f"- **Succeeded:** {success_count}\n"
+        f"- **Failed:** {fail_count}\n\n"
+        "Download all generated files using the link below."
+    )
+    yield (
+        log_output + summary,
+        str(zip_path),
+        _DOWNLOAD_SKELETON_IDLE,
+        _btn_ready(),
+    )
 
 
-def run_diagnostics(poppler_custom: Optional[str] = None, musescore_custom: Optional[str] = None) -> str:
-    """Run environment check and return beautiful markdown status report."""
-    report = "## 🛡️ System Pre-Flight Diagnostics\n\n"
+def run_diagnostics(musescore_custom: Optional[str] = None) -> str:
+    """Run environment check and return markdown status report."""
+    report = "## System Pre-Flight Diagnostics\n\n"
 
-    # 1. Python Version
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    report += f"🔹 **Python Engine:** `v{py_ver}` *(Required: >= 3.9)* — **✅ PASS**\n\n"
+    report += f"- **Python Engine:** `v{py_ver}` *(Required: >= 3.9)* — **[PASS]**\n\n"
 
-    # 2. Poppler Utility
-    poppler_ok = False
-    poppler_custom = poppler_custom.strip() if poppler_custom else None
-    if poppler_custom:
-        pdftoppm_path = Path(poppler_custom) / "pdftoppm"
-        pdftoppm_path_exe = Path(poppler_custom) / "pdftoppm.exe"
-        if pdftoppm_path.exists() or pdftoppm_path_exe.exists() or shutil.which("pdftoppm", path=poppler_custom):
-            poppler_ok = True
-    else:
-        if shutil.which("pdftoppm"):
-            poppler_ok = True
+    try:
+        import pypdfium2 as pdfium  # noqa: F401
 
-    if poppler_ok:
-        report += "🔹 **Poppler PDF Engine:** **✅ DETECTED** (Ready for sheet music extraction)\n\n"
-    else:
-        report += "🔹 **Poppler PDF Engine:** **⚠️ MISSING OR NOT CONFIGURED**\n" \
-                  "  - *Note:* This tool converts PDF pages to high-resolution PNGs. If conversion fails, please download Poppler and specify the directory path in settings.\n\n"
+        report += (
+            f"- **PDF Rendering (pypdfium2):** **[OK]** "
+            f"(built-in; no Poppler required)\n\n"
+        )
+    except ImportError:
+        report += (
+            "- **PDF Rendering (pypdfium2):** **[MISSING]**\n"
+            "  - Reinstall PDF2Muse; pypdfium2 is required for PDF-to-image conversion.\n\n"
+        )
 
-    # 3. MuseScore Utility
     msc_path = None
     musescore_custom = musescore_custom.strip() if musescore_custom else None
     if musescore_custom:
@@ -213,30 +461,36 @@ def run_diagnostics(poppler_custom: Optional[str] = None, musescore_custom: Opti
         msc_path = find_musescore_binary()
 
     if msc_path:
-        report += f"🔹 **MuseScore Interface:** **✅ DETECTED** at `{msc_path}`\n\n"
+        report += f"- **MuseScore Interface:** **[DETECTED]** at `{msc_path}`\n\n"
     else:
-        report += "🔹 **MuseScore Interface:** **💡 OPTIONAL (NOT DETECTED)**\n" \
-                  "  - *Note:* The system will still export universal MusicXML perfectly, but will skip compiling native `.mscx` MuseScore files.\n\n"
+        report += (
+            "- **MuseScore Interface:** **OPTIONAL (NOT DETECTED)**\n"
+            "  - MusicXML export still works; native `.mscx` export is skipped without MuseScore.\n\n"
+        )
 
-    # 4. Deep Learning Checkpoints
     chk_dir = get_checkpoint_dir()
     unet_path = chk_dir / "unet_big" / "model.onnx"
     seg_path = chk_dir / "seg_net" / "model.onnx"
     models_ready = unet_path.exists() and seg_path.exists()
 
     if models_ready:
-        report += "🔹 **Deep Learning OMR Models:** **✅ READY** (unet_big & seg_net loaded locally)\n\n"
+        report += "- **Deep Learning OMR Models:** **[READY]** (unet_big & seg_net loaded locally)\n\n"
     else:
-        report += "🔹 **Deep Learning OMR Models:** **⚠️ CHECKPOINTS NOT DETECTED**\n" \
-                  "  - Checkpoints are automatically downloaded on first run, or you can pre-download them in the Model Manager tab.\n\n"
+        report += (
+            "- **Deep Learning OMR Models:** **[CHECKPOINTS NOT DETECTED]**\n"
+            "  - Checkpoints download on first run, or use the Model Manager tab.\n\n"
+        )
 
-    # Hardware Acceleration Check
     try:
         import onnxruntime as ort
+
         providers = ort.get_available_providers()
-        report += f"🔹 **ONNX Runtime Engine:** `v{ort.__version__}` (Available Acceleration: `{providers}`)\n"
+        report += (
+            f"- **ONNX Runtime Engine:** `v{ort.__version__}` "
+            f"(Available Acceleration: `{providers}`)\n"
+        )
     except ImportError:
-        report += "🔹 **ONNX Runtime Engine:** *Not loaded / standard module*\n"
+        report += "- **ONNX Runtime Engine:** *Not loaded / standard module*\n"
 
     return report
 
@@ -245,210 +499,321 @@ def download_checkpoints_ui() -> str:
     """Gradio handler for downloading model checkpoints."""
     try:
         download_checkpoints(force=True)
-        return "### ✅ OMR Model Checkpoints downloaded successfully and ready for use!"
+        return (
+            "### OMR model checkpoints downloaded\n\n"
+            "Checkpoints are ready. Run Pre-Flight Diagnostics to confirm."
+        )
     except Exception as e:
-        return f"### ❌ Failed to download model checkpoints:\n\n`{str(e)}`"
+        return f"### Failed to download model checkpoints\n\n`{str(e)}`"
 
 
 def create_interface(
-    default_poppler: Optional[str] = None,
     default_musescore: Optional[str] = None,
 ) -> gr.Blocks:
-    """Create and return the beautiful, premium Gradio interface."""
+    """Create and return the Gradio interface."""
     custom_css = """
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Righteous&display=swap');
-    
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
     :root {
-        --primary-font: 'Poppins', sans-serif;
-        --title-font: 'Righteous', sans-serif;
-        --color-bg: #0F0F23;
-        --color-surface: rgba(30, 27, 75, 0.45);
-        --color-border: rgba(99, 102, 241, 0.2);
-        --color-border-active: rgba(99, 102, 241, 0.8);
-        --color-accent: #22C55E;
-        --color-text-primary: #F8FAFC;
-        --color-text-muted: #94A3B8;
-        --glass-shadow: 0 8px 32px 0 rgba(15, 15, 35, 0.37);
-        --glass-blur: blur(12px);
+        --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+        --space-1: 8px;
+        --space-2: 16px;
+        --space-3: 24px;
+        --space-4: 32px;
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --color-primary: #EA580C;
+        --color-on-primary: #FFFFFF;
+        --color-secondary: #F97316;
+        --color-accent: #2563EB;
+        --color-bg: #1C1917;
+        --color-surface: #292524;
+        --color-surface-elevated: #44403C;
+        --color-border: rgba(255, 255, 255, 0.1);
+        --color-text: #FAFAF9;
+        --color-text-muted: #D6D3D1;
+        --color-text-subtle: #A8A29E;
+        --color-success: #22C55E;
+        --color-destructive: #DC2626;
+        --color-ring: #EA580C;
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+        --motion-fast: 150ms;
+        --motion-base: 250ms;
     }
-    
+
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+        .download-skeleton .skeleton-line {
+            animation: none !important;
+            opacity: 0.35;
+        }
+    }
+
     body, .gradio-container {
-        font-family: var(--primary-font) !important;
+        font-family: var(--font-sans) !important;
+        font-size: 16px !important;
+        line-height: 1.5 !important;
         background-color: var(--color-bg) !important;
-        background-image: radial-gradient(circle at 10% 20%, rgba(90, 28, 135, 0.15) 0%, transparent 45%),
-                          radial-gradient(circle at 90% 80%, rgba(67, 56, 202, 0.1) 0%, transparent 50%) !important;
-        color: var(--color-text-primary) !important;
+        background-image:
+            radial-gradient(circle at 12% 8%, rgba(234, 88, 12, 0.12) 0%, transparent 42%),
+            radial-gradient(circle at 88% 92%, rgba(37, 99, 235, 0.08) 0%, transparent 45%) !important;
+        color: var(--color-text) !important;
+        overflow-x: hidden !important;
     }
-    
+
     .container {
-        max-width: 1100px !important;
+        max-width: 1120px !important;
+        width: 100% !important;
         margin: 0 auto !important;
-        padding: 10px !important;
+        padding: var(--space-2) !important;
+        box-sizing: border-box !important;
     }
-    
-    /* Header Banner */
+
+    .inline-icon {
+        width: 1.1em;
+        height: 1.1em;
+        vertical-align: -0.15em;
+        margin-right: 0.35em;
+        display: inline-block;
+    }
+
     .header-banner {
-        background: linear-gradient(135deg, rgba(88, 28, 135, 0.5) 0%, rgba(30, 27, 75, 0.75) 100%) !important;
-        backdrop-filter: var(--glass-blur) !important;
-        -webkit-backdrop-filter: var(--glass-blur) !important;
+        background: linear-gradient(135deg, rgba(41, 37, 36, 0.95) 0%, rgba(28, 25, 23, 0.98) 100%) !important;
         border: 1px solid var(--color-border) !important;
-        border-radius: 24px !important;
-        padding: 40px 30px !important;
-        margin-bottom: 30px !important;
-        box-shadow: var(--glass-shadow), 0 0 40px rgba(88, 28, 135, 0.15) !important;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+        border-radius: var(--radius-lg) !important;
+        padding: var(--space-4) var(--space-3) !important;
+        margin-bottom: var(--space-3) !important;
+        box-shadow: var(--shadow-md) !important;
         text-align: center;
-        position: relative;
-        overflow: hidden;
     }
-    
+
     .header-content {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 16px;
+        gap: var(--space-2);
+        flex-wrap: wrap;
     }
-    
+
     .header-logo {
-        width: 42px;
-        height: 42px;
-        color: var(--color-accent);
-        filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.5));
+        width: 40px;
+        height: 40px;
+        color: var(--color-primary);
+        flex-shrink: 0;
     }
-    
+
     .header-banner h1 {
-        font-family: var(--title-font) !important;
-        font-size: 3.2rem !important;
-        font-weight: normal !important;
+        font-family: var(--font-sans) !important;
+        font-size: clamp(1.75rem, 4vw, 2.5rem) !important;
+        font-weight: 700 !important;
         margin: 0 !important;
-        background: linear-gradient(to right, #FFFFFF, #C084FC) !important;
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
-        letter-spacing: -0.01em !important;
+        color: var(--color-text) !important;
+        letter-spacing: -0.02em !important;
     }
-    
+
     .header-banner p {
-        font-size: 1.15rem !important;
+        font-size: 1rem !important;
         color: var(--color-text-muted) !important;
-        max-width: 680px !important;
-        margin: 12px 0 0 0 !important;
-        line-height: 1.6 !important;
+        max-width: 42rem !important;
+        margin: var(--space-2) auto 0 !important;
     }
-    
-    /* Panels / Accordions / Tabs */
+
     .block, .gr-box, .accordion, .glass-tab {
-        background: var(--color-surface) !important;
-        backdrop-filter: var(--glass-blur) !important;
-        -webkit-backdrop-filter: var(--glass-blur) !important;
+        background: rgba(41, 37, 36, 0.72) !important;
         border: 1px solid var(--color-border) !important;
-        border-radius: 16px !important;
-        box-shadow: var(--glass-shadow) !important;
-        transition: all 0.3s ease !important;
-        padding: 20px !important;
+        border-radius: var(--radius-md) !important;
+        box-shadow: var(--shadow-sm) !important;
+        padding: var(--space-3) !important;
     }
-    
-    .accordion:hover {
-        border-color: rgba(99, 102, 241, 0.3) !important;
+
+    .tabs button, button[role="tab"] {
+        font-weight: 500 !important;
+        min-height: 44px !important;
+        padding: 10px 16px !important;
+        color: var(--color-text-muted) !important;
     }
-    
-    /* Form input styling */
-    input[type="text"], input[type="number"], textarea {
-        background: rgba(15, 15, 35, 0.5) !important;
+
+    .tabs button.selected, button[role="tab"][aria-selected="true"] {
+        color: var(--color-text) !important;
+        border-color: var(--color-primary) !important;
+    }
+
+    input[type="text"], input[type="number"], textarea, select {
+        background: var(--color-bg) !important;
         border: 1px solid var(--color-border) !important;
-        border-radius: 10px !important;
-        color: var(--color-text-primary) !important;
-        transition: all 0.25s ease !important;
+        border-radius: var(--radius-sm) !important;
+        color: var(--color-text) !important;
+        font-size: 16px !important;
+        min-height: 44px !important;
+        transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease !important;
     }
-    
-    input[type="text"]:focus, input[type="number"]:focus {
-        border-color: var(--color-border-active) !important;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2) !important;
+
+    input[type="text"]:focus-visible, input[type="number"]:focus-visible,
+    textarea:focus-visible, select:focus-visible,
+    button:focus-visible, .gr-button:focus-visible {
+        outline: 2px solid var(--color-ring) !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.25) !important;
     }
-    
-    /* Custom Convert Button */
-    .convert-btn {
-        font-family: var(--primary-font) !important;
+
+    label, .gr-form > label span {
+        color: var(--color-text-muted) !important;
+        font-size: 0.9375rem !important;
+    }
+
+    .convert-btn, button.convert-btn {
+        font-family: var(--font-sans) !important;
         font-weight: 600 !important;
-        font-size: 1.15rem !important;
-        padding: 14px 28px !important;
-        border-radius: 12px !important;
-        background: linear-gradient(135deg, var(--color-accent) 0%, #10B981 100%) !important;
-        color: #052E16 !important;
+        font-size: 1rem !important;
+        min-height: 48px !important;
+        padding: 12px 24px !important;
+        border-radius: var(--radius-sm) !important;
+        background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%) !important;
+        color: var(--color-on-primary) !important;
         border: none !important;
-        box-shadow: 0 4px 15px rgba(34, 197, 94, 0.25) !important;
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: var(--shadow-sm) !important;
+        transition: transform var(--motion-fast) ease, box-shadow var(--motion-base) ease, opacity var(--motion-fast) ease !important;
         cursor: pointer !important;
     }
-    
-    .convert-btn:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 10px 25px rgba(34, 197, 94, 0.45) !important;
-        filter: brightness(1.05) !important;
+
+    .convert-btn:hover:not(:disabled):not(.is-busy) {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(234, 88, 12, 0.35) !important;
     }
-    
-    .convert-btn:active {
-        transform: translateY(0) !important;
+
+    .convert-btn.is-busy, .convert-btn:disabled {
+        opacity: 0.55 !important;
+        cursor: not-allowed !important;
+        transform: none !important;
+        pointer-events: none !important;
     }
-    
-    /* Muted and Download Areas */
+
     .download-card {
-        padding: 20px !important;
-        background: rgba(15, 15, 35, 0.35) !important;
-        border: 1px solid rgba(99, 102, 241, 0.15) !important;
-        border-radius: 16px !important;
+        padding: var(--space-3) !important;
+        background: rgba(28, 25, 23, 0.65) !important;
+        border: 1px solid var(--color-border) !important;
+        border-radius: var(--radius-md) !important;
+        position: relative;
     }
-    
-    /* Footer section line */
+
+    .download-skeleton {
+        display: none;
+        margin-bottom: var(--space-2);
+        padding: var(--space-2);
+        border-radius: var(--radius-sm);
+        background: rgba(28, 25, 23, 0.5);
+        border: 1px dashed var(--color-border);
+    }
+
+    .download-skeleton.is-active {
+        display: block;
+    }
+
+    .skeleton-line {
+        height: 12px;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        background: linear-gradient(
+            90deg,
+            rgba(68, 64, 60, 0.35) 0%,
+            rgba(120, 113, 108, 0.45) 50%,
+            rgba(68, 64, 60, 0.35) 100%
+        );
+        background-size: 200% 100%;
+        animation: shimmer 1.4s ease-in-out infinite;
+    }
+
+    .skeleton-line--wide { width: 92%; }
+    .skeleton-line--medium { width: 72%; }
+    .skeleton-line--narrow { width: 48%; margin-bottom: 0; }
+
+    @keyframes shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    .empty-download-hint {
+        color: var(--color-text-subtle);
+        font-size: 0.9375rem;
+        margin: 0 0 var(--space-2) 0;
+    }
+
     .divider {
-        margin: 40px 0;
+        margin: var(--space-4) 0;
         border: 0;
-        border-top: 1px solid rgba(99, 102, 241, 0.15);
+        border-top: 1px solid var(--color-border);
     }
-    
-    .requirement-card {
-        padding: 20px;
-        background: rgba(30, 27, 75, 0.2);
-        border-radius: 12px;
-        border-left: 4px solid #C084FC;
+
+    .requirement-card, .tip-card {
+        padding: var(--space-3);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--color-border);
+        background: rgba(41, 37, 36, 0.55);
     }
-    
-    .tip-card {
-        padding: 20px;
-        background: rgba(16, 185, 129, 0.05);
-        border-radius: 12px;
-        border-left: 4px solid var(--color-accent);
+
+    .requirement-card { border-left: 4px solid var(--color-accent); }
+    .tip-card { border-left: 4px solid var(--color-success); }
+
+    .requirement-card h3, .tip-card h3 {
+        margin-top: 0;
+        color: var(--color-text);
+        font-size: 1.0625rem;
+        font-weight: 600;
+    }
+
+    .requirement-card p, .tip-card p,
+    .requirement-card li, .tip-card li {
+        color: var(--color-text-muted);
+        font-size: 0.9375rem;
+        line-height: 1.6;
+    }
+
+    .prose h3, .markdown h3, .md h3 {
+        color: var(--color-text) !important;
+    }
+
+    .prose p, .markdown p, .md p, .prose li, .markdown li {
+        color: var(--color-text-muted) !important;
+    }
+
+    @media (max-width: 768px) {
+        .container { padding: var(--space-1) !important; }
+        .block, .gr-box, .accordion, .glass-tab { padding: var(--space-2) !important; }
+        .header-banner { padding: var(--space-3) var(--space-2) !important; }
     }
     """
- 
+
     interface = gr.Blocks(title="PDF2Muse - Sheet Music Converter")
     interface.css = custom_css
-    
+
     with interface:
-        
         with gr.Column(elem_classes="container"):
-            # Header
             gr.HTML(
-                """
+                f"""
                 <div class="header-banner">
                     <div class="header-content">
-                        <svg class="header-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <svg class="header-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                             fill="none" stroke="currentColor" stroke-width="2.5"
+                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M9 18V5l12-2v13"></path>
                             <circle cx="6" cy="18" r="3"></circle>
                             <circle cx="18" cy="16" r="3"></circle>
                         </svg>
                         <h1>PDF2Muse</h1>
                     </div>
-                    <p>Convert scanned PDF sheet music into digital, editable MusicXML & MuseScore files using advanced AI-powered Optical Music Recognition.</p>
+                    <p>Convert scanned PDF sheet music into editable MusicXML and MuseScore files using AI-powered optical music recognition.</p>
                 </div>
                 """
             )
- 
-            # Tabbed Design
+
             with gr.Tabs():
-                
-                # Tab 1: Single Conversion
                 with gr.TabItem("Single Score Conversion"):
                     with gr.Row(elem_classes="glass-tab"):
                         with gr.Column(scale=11):
@@ -457,61 +822,62 @@ def create_interface(
                                 file_types=[".pdf"],
                                 type="filepath",
                             )
- 
+
                             with gr.Accordion("Environment & Settings", open=True):
-                                with gr.Group():
-                                    poppler_input = gr.Textbox(
-                                        label="Poppler Bin Path",
-                                        value=default_poppler or "",
-                                        placeholder="e.g. C:\\poppler\\bin (Optional if in system PATH)",
-                                        info="Directory containing poppler binaries (pdftoppm, pdfinfo)",
-                                    )
-                                    musescore_input = gr.Textbox(
-                                        label="MuseScore Executable Path",
-                                        value=default_musescore or "",
-                                        placeholder="e.g. C:\\Program Files\\MuseScore 4\\bin\\MuseScore4.exe (Optional if in PATH)",
-                                        info="Exact path to your MuseScore executable",
-                                    )
- 
+                                musescore_input = gr.Textbox(
+                                    label="MuseScore Executable Path",
+                                    value=default_musescore or "",
+                                    placeholder="e.g. C:\\Program Files\\MuseScore 4\\bin\\MuseScore4.exe",
+                                    info="Optional if MuseScore is on PATH",
+                                )
                                 with gr.Row():
                                     first_page_input = gr.Number(
                                         label="First Page",
                                         value=0,
                                         precision=0,
-                                        info="1-indexed, leave 0 for start",
+                                        info="1-indexed; 0 = start",
                                     )
                                     last_page_input = gr.Number(
                                         label="Last Page",
                                         value=0,
                                         precision=0,
-                                        info="1-indexed, leave 0 for end",
+                                        info="1-indexed; 0 = end",
                                     )
- 
                                 with gr.Row():
                                     deskew_checkbox = gr.Checkbox(
                                         label="Enable Deskewing",
                                         value=True,
-                                        info="Auto-correct tilted pages",
+                                        info="Auto-correct tilted scans",
                                     )
                                     use_tf_checkbox = gr.Checkbox(
                                         label="Use TensorFlow (Slower)",
                                         value=False,
-                                        info="Use CPU/GPU TensorFlow engine instead of default ONNX Runtime",
+                                        info="ONNX Runtime is the default",
                                     )
- 
+
                             convert_button = gr.Button(
                                 "Recognize & Convert Sheet Music",
                                 variant="primary",
                                 elem_classes="convert-btn",
                             )
- 
+
                         with gr.Column(scale=9):
                             status_output = gr.Markdown(
-                                value="### Awaiting Input\nUpload a PDF file and press the button to begin transcription.",
+                                value=(
+                                    "### Awaiting input\n\n"
+                                    "Upload a PDF, adjust settings if needed, then start conversion."
+                                ),
                             )
- 
                             with gr.Group(elem_classes="download-card"):
-                                gr.Markdown("### Generated Outputs")
+                                download_skeleton = gr.HTML(
+                                    value=_DOWNLOAD_SKELETON_IDLE,
+                                )
+                                gr.HTML(
+                                    '<p class="empty-download-hint">'
+                                    "Outputs appear here after a successful conversion."
+                                    "</p>"
+                                )
+                                gr.Markdown("### Generated outputs")
                                 musicxml_output = gr.File(
                                     label="Download MusicXML (.musicxml)",
                                     interactive=False,
@@ -520,8 +886,7 @@ def create_interface(
                                     label="Download MuseScore File (.mscx)",
                                     interactive=False,
                                 )
- 
-                # Tab 2: Batch Conversion
+
                 with gr.TabItem("Batch Processing"):
                     with gr.Row(elem_classes="glass-tab"):
                         with gr.Column(scale=11):
@@ -531,8 +896,18 @@ def create_interface(
                                 file_count="multiple",
                                 type="filepath",
                             )
-                            
                             with gr.Accordion("Batch Processing Settings", open=False):
+                                with gr.Row():
+                                    batch_first_page = gr.Number(
+                                        label="First Page",
+                                        value=0,
+                                        precision=0,
+                                    )
+                                    batch_last_page = gr.Number(
+                                        label="Last Page",
+                                        value=0,
+                                        precision=0,
+                                    )
                                 batch_deskew = gr.Checkbox(
                                     label="Enable Deskewing",
                                     value=True,
@@ -541,66 +916,77 @@ def create_interface(
                                     label="Use TensorFlow",
                                     value=False,
                                 )
- 
+                                batch_musescore_input = gr.Textbox(
+                                    label="MuseScore Executable Path",
+                                    value=default_musescore or "",
+                                )
+
                             batch_button = gr.Button(
                                 "Convert Batch Scores (Outputs Zipped)",
                                 variant="primary",
                                 elem_classes="convert-btn",
                             )
- 
+
                         with gr.Column(scale=9):
                             batch_status = gr.Markdown(
-                                value="### Awaiting Batch Files\nUpload multiple PDF files to queue them for Optical Music Recognition.",
+                                value=(
+                                    "### Awaiting batch files\n\n"
+                                    "Upload multiple PDFs to queue them for conversion."
+                                ),
                             )
-                            
                             with gr.Group(elem_classes="download-card"):
-                                gr.Markdown("### Zipped Batch Output")
+                                batch_download_skeleton = gr.HTML(
+                                    value=_DOWNLOAD_SKELETON_IDLE,
+                                )
+                                gr.HTML(
+                                    '<p class="empty-download-hint">'
+                                    "A ZIP archive will appear here when the batch finishes."
+                                    "</p>"
+                                )
+                                gr.Markdown("### Zipped batch output")
                                 batch_zip_output = gr.File(
                                     label="Download All Transcribed Scores (.zip)",
                                     interactive=False,
                                 )
- 
-                # Tab 3: Model Manager
+
                 with gr.TabItem("Model Checkpoints Manager"):
                     with gr.Column(elem_classes="glass-tab"):
                         gr.Markdown(
                             """
-                            ### Manage OMR Model Checkpoints
-                            
-                            PDF2Muse utilizes two pre-trained deep learning networks under the hood:
-                            - **`unet_big`**: Layout analysis, staff line segmentation.
-                            - **`seg_net`**: Note, clef, accidental, and duration recognition.
-                            
-                            Normally, these models are automatically fetched on first use. If you have an unstable network or want to pre-load them, download them here.
+                            ### Manage OMR model checkpoints
+
+                            PDF2Muse uses two pre-trained networks:
+                            - **`unet_big`**: layout and staff segmentation
+                            - **`seg_net`**: notes, clefs, and rhythm symbols
+
+                            Models usually download on first run; use this tab to pre-fetch them on slow networks.
                             """
                         )
-                        model_status = gr.Markdown(value="*Status: Model checkpoints will be checked during pre-flight diagnostics.*")
+                        model_status = gr.Markdown(
+                            value="*Checkpoints are verified in Pre-Flight Diagnostics.*"
+                        )
                         download_btn = gr.Button("Download Checkpoints Now", variant="secondary")
- 
-                # Tab 4: System Diagnostics
+
                 with gr.TabItem("Pre-Flight Diagnostics"):
                     with gr.Column(elem_classes="glass-tab"):
-                        gr.Markdown("### System Environment Diagnostics")
-                        diag_output = gr.Markdown(value="*Click 'Run System Check' to query system variables and detect dependency installations.*")
+                        gr.Markdown("### System environment diagnostics")
+                        diag_output = gr.Markdown(
+                            value="*Click **Run System Check** to inspect dependencies.*"
+                        )
                         diag_btn = gr.Button("Run System Check", variant="secondary")
- 
-            gr.HTML(
-                """
-                <hr class="divider" />
-                """
-            )
- 
-            # Footer / Explainer Section
+
+            gr.HTML('<hr class="divider" />')
+
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.HTML(
                         """
                         <div class="requirement-card">
-                            <h3 style="margin-top: 0; color: #FFFFFF; font-family: 'Poppins', sans-serif;">System Preparation</h3>
-                            <p style="color: #94A3B8; font-size: 0.95rem; line-height: 1.6;">PDF2Muse relies on native system libraries for best performance:</p>
-                            <ul style="color: #94A3B8; font-size: 0.95rem; line-height: 1.6; padding-left: 20px;">
-                                <li><strong>Poppler</strong>: Converts PDF pages to clean high-resolution OMR images. Pasting the <code>bin</code> path is recommended on Windows.</li>
-                                <li><strong>MuseScore</strong>: Converts MusicXML into MuseScore format natively.</li>
+                            <h3>System preparation</h3>
+                            <p>PDF2Muse uses these components for best results:</p>
+                            <ul>
+                                <li><strong>PDF rendering</strong>: Built-in via pypdfium2 (no Poppler).</li>
+                                <li><strong>MuseScore</strong>: Optional; exports native `.mscx` from MusicXML.</li>
                             </ul>
                         </div>
                         """
@@ -609,25 +995,23 @@ def create_interface(
                     gr.HTML(
                         """
                         <div class="tip-card">
-                            <h3 style="margin-top: 0; color: #FFFFFF; font-family: 'Poppins', sans-serif;">Peak Recognition Quality</h3>
-                            <p style="color: #94A3B8; font-size: 0.95rem; line-height: 1.6;">For maximum OMR accuracy:</p>
-                            <ul style="color: #94A3B8; font-size: 0.95rem; line-height: 1.6; padding-left: 20px;">
-                                <li>Use clear sheets scanned at 300 DPI or higher.</li>
-                                <li>Avoid handwritten, tab, chord-only, or unconventional scores.</li>
-                                <li>Ensure bright, shadow-free, and high-contrast digital sheets.</li>
+                            <h3>Peak recognition quality</h3>
+                            <p>For higher OMR accuracy:</p>
+                            <ul>
+                                <li>Scan at 300 DPI or higher with strong contrast.</li>
+                                <li>Avoid handwritten, tab-only, or chord-chart layouts.</li>
+                                <li>Use even lighting without shadows or skew.</li>
                             </ul>
                         </div>
                         """
                     )
- 
-        # Wire up single convert event handler
+
         convert_button.click(
             fn=convert_pdf,
             inputs=[
                 pdf_input,
                 deskew_checkbox,
                 use_tf_checkbox,
-                poppler_input,
                 musescore_input,
                 first_page_input,
                 last_page_input,
@@ -636,36 +1020,40 @@ def create_interface(
                 status_output,
                 musicxml_output,
                 mscx_output,
+                download_skeleton,
+                convert_button,
             ],
+            show_progress="full",
         )
 
-        # Wire up batch convert handler
         batch_button.click(
             fn=convert_batch_pdfs,
             inputs=[
                 batch_input,
                 batch_deskew,
                 batch_tf,
-                poppler_input,
-                musescore_input,
+                batch_musescore_input,
+                batch_first_page,
+                batch_last_page,
             ],
             outputs=[
                 batch_status,
                 batch_zip_output,
+                batch_download_skeleton,
+                batch_button,
             ],
+            show_progress="full",
         )
 
-        # Wire up checkpoint manager
         download_btn.click(
             fn=download_checkpoints_ui,
             inputs=[],
             outputs=[model_status],
         )
 
-        # Wire up diagnostics
         diag_btn.click(
             fn=run_diagnostics,
-            inputs=[poppler_input, musescore_input],
+            inputs=[musescore_input],
             outputs=[diag_output],
         )
 

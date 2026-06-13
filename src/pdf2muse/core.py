@@ -2,6 +2,7 @@
 
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,7 +30,6 @@ class PDF2MusePipeline:
         deskew: bool = True,
         use_tf: bool = False,
         save_cache: bool = False,
-        poppler_path: Optional[str] = None,
         musescore_path: Optional[str] = None,
         first_page: Optional[int] = None,
         last_page: Optional[int] = None,
@@ -43,7 +43,6 @@ class PDF2MusePipeline:
             deskew: Whether to perform deskewing (default: True)
             use_tf: Use TensorFlow for model inference (default: False, uses ONNX)
             save_cache: Save model predictions for future use (default: False)
-            poppler_path: Path to the poppler bin directory (default: None)
             musescore_path: Path to the MuseScore executable (default: None)
             first_page: First page of the PDF to convert (1-indexed, default: None)
             last_page: Last page of the PDF to convert (1-indexed, default: None)
@@ -53,7 +52,6 @@ class PDF2MusePipeline:
         self.deskew = deskew
         self.use_tf = use_tf
         self.save_cache = save_cache
-        self.poppler_path = Path(poppler_path).resolve() if poppler_path else None
         self.musescore_path = Path(musescore_path).resolve() if musescore_path else None
         self.first_page = first_page
         self.last_page = last_page
@@ -96,7 +94,7 @@ class PDF2MusePipeline:
                 # Standard PDF is 72 DPI. 300/72 = 4.166
                 bitmap = page.render(scale=4.1666)
                 pil_image = bitmap.to_pil()
-                
+
                 png_path = output_dir / f"page_{i:03d}.png"
                 pil_image.save(str(png_path), "PNG")
                 png_files.append(png_path)
@@ -111,22 +109,28 @@ class PDF2MusePipeline:
 
     def process_image_with_oemer(
         self, image_path: Path, musicxml_dir: Path
-    ) -> Optional[Path]:
+    ) -> tuple[Optional[Path], Optional[str]]:
         """
         Process a single image with oemer to extract MusicXML.
 
+        Each page runs in its own subdirectory under ``musicxml_dir`` so concurrent
+        workers do not race on shared ``*.musicxml`` glob results.
+
         Args:
             image_path: Path to the PNG image
-            musicxml_dir: Directory to save MusicXML output
+            musicxml_dir: Parent directory for per-page OMR outputs
 
         Returns:
-            Path to generated MusicXML file, or None if processing failed
+            Tuple of (path to MusicXML in musicxml_dir, error message if failed)
         """
         logger.info(f"Processing {image_path.name} with oemer")
 
-        # Invoke oemer via sys.executable, ignoring unpickling warnings, to ensure it runs in the active virtual environment
-        command = [sys.executable, "-W", "ignore", "-m", "oemer.ete", str(image_path)]
-        
+        page_dir = musicxml_dir / image_path.stem
+        page_dir.mkdir(parents=True, exist_ok=True)
+
+        oemer_module = "oemer.ete" if self.use_tf else "pdf2muse._oemer_cpu"
+        command = [sys.executable, "-W", "ignore", "-m", oemer_module, str(image_path)]
+
         if not self.deskew:
             command.append("--without-deskew")
         if self.use_tf:
@@ -135,17 +139,14 @@ class PDF2MusePipeline:
             command.append("--save-cache")
 
         try:
-            # Limit thread allocation inside ONNX Runtime CPU. This prevents a memory spike and 
-            # bad_alloc crash when running multiple large session graphs in a single process.
             env = os.environ.copy()
             env["OMP_NUM_THREADS"] = "1"
             env["ONNXRUNTIME_INTER_OP_NUM_THREADS"] = "1"
             env["ONNXRUNTIME_INTRA_OP_NUM_THREADS"] = "1"
 
-            # Run oemer and capture output
             result = subprocess.run(
                 command,
-                cwd=str(musicxml_dir),
+                cwd=str(page_dir),
                 env=env,
                 check=True,
                 capture_output=True,
@@ -153,30 +154,35 @@ class PDF2MusePipeline:
             )
             logger.debug(result.stdout)
 
-            # Find the generated MusicXML file
-            # oemer typically creates a file with the same base name as the input
-            expected_musicxml = musicxml_dir / f"{image_path.stem}.musicxml"
-            
-            # Look for any .musicxml file in the directory
-            musicxml_files = list(musicxml_dir.glob("*.musicxml"))
-            
-            if musicxml_files:
-                # Move the file to have the correct name
-                actual_file = musicxml_files[-1]  # Get the most recent one
-                if actual_file != expected_musicxml:
-                    actual_file.rename(expected_musicxml)
-                return expected_musicxml
-            else:
-                logger.warning(f"No MusicXML file generated for {image_path.name}")
-                return None
+            expected_musicxml = page_dir / f"{image_path.stem}.musicxml"
+            musicxml_files = list(page_dir.glob("*.musicxml"))
+
+            if not musicxml_files:
+                return None, f"No MusicXML file generated for {image_path.name}"
+
+            actual_file = next(
+                (p for p in musicxml_files if p.name == expected_musicxml.name),
+                musicxml_files[0],
+            )
+
+            combined_path = musicxml_dir / f"{image_path.stem}.musicxml"
+            if actual_file.resolve() != combined_path.resolve():
+                shutil.copy2(actual_file, combined_path)
+
+            return combined_path, None
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error processing {image_path.name}: {e.stderr}")
+            stderr = (e.stderr or "").strip()
+            stdout = (e.stdout or "").strip()
+            snippet = stderr or stdout or str(e)
+            if len(snippet) > 800:
+                snippet = snippet[:800] + "..."
+            logger.error(f"Error processing {image_path.name}: {snippet}")
             console.print(f"[yellow][WARN][/yellow] Failed to process {image_path.name}")
-            return None
+            return None, f"oemer failed on {image_path.name}: {snippet}"
         except Exception as e:
             logger.error(f"Unexpected error processing {image_path.name}: {e}")
-            return None
+            return None, f"Unexpected error on {image_path.name}: {e}"
 
     def run(self) -> Path:
         """
@@ -189,12 +195,10 @@ class PDF2MusePipeline:
         console.print(f"Input: {self.pdf_path}")
         console.print(f"Output: {self.output_dir}\n")
 
-        # Ensure oemer checkpoints are available
         console.print("[cyan]Checking oemer model checkpoints...[/cyan]")
         ensure_checkpoints()
         console.print("[green][OK][/green] Checkpoints ready\n")
 
-        # Create temporary directories
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             image_dir = temp_path / "images"
@@ -202,60 +206,69 @@ class PDF2MusePipeline:
             image_dir.mkdir()
             musicxml_dir.mkdir()
 
-            # Step 1: Convert PDF to PNG images
             png_files = self.pdf_to_png(image_dir)
 
-            # Step 2: Process each image with oemer (concurrently)
-            console.print(f"[cyan]Processing {len(png_files)} pages with oemer (concurrently)...[/cyan]")
-            
-            # Determine maximum concurrent workers based on CPU cores. Limit to 4 to avoid memory spikes.
+            console.print(
+                f"[cyan]Processing {len(png_files)} pages with oemer (concurrently)...[/cyan]"
+            )
+
             max_workers = min(4, max(1, (os.cpu_count() or 2) // 2))
             logger.info(f"Running concurrent OMR pipeline with max_workers={max_workers}")
-            
+
+            page_errors: list[str] = []
+
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
                 console=console,
             ) as progress:
                 task = progress.add_task("Processing pages...", total=len(png_files))
-                
-                results = [None] * len(png_files)
+
+                results: list[Optional[Path]] = [None] * len(png_files)
                 futures = {}
-                
+
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     for i, png_file in enumerate(png_files):
-                        future = executor.submit(self.process_image_with_oemer, png_file, musicxml_dir)
+                        future = executor.submit(
+                            self.process_image_with_oemer, png_file, musicxml_dir
+                        )
                         futures[future] = (i, png_file.name)
-                    
+
                     for future in as_completed(futures):
                         idx, filename = futures[future]
                         try:
-                            musicxml_file = future.result()
+                            musicxml_file, err = future.result()
                             if musicxml_file:
                                 results[idx] = musicxml_file
-                            progress.update(task, description=f"Completed {filename}")
+                                progress.update(task, description=f"Completed {filename}")
+                            else:
+                                if err:
+                                    page_errors.append(err)
+                                progress.update(task, description=f"Failed {filename}")
                         except Exception as e:
+                            page_errors.append(f"{filename}: {e}")
                             logger.error(f"Error processing page {filename}: {e}")
                             progress.update(task, description=f"Failed {filename}")
                         progress.advance(task)
-                
+
                 musicxml_files = [res for res in results if res is not None]
 
-            console.print(f"[green][OK][/green] Processed {len(musicxml_files)} pages successfully\n")
+            console.print(
+                f"[green][OK][/green] Processed {len(musicxml_files)} pages successfully\n"
+            )
 
             if not musicxml_files:
-                raise RuntimeError("No MusicXML files were generated")
+                detail = "\n".join(page_errors) if page_errors else "Unknown error"
+                raise RuntimeError(f"No MusicXML files were generated.\n{detail}")
 
-            # Step 3: Join MusicXML files
             console.print("[cyan]Joining MusicXML files...[/cyan]")
             combined_musicxml = self.output_dir / "combined.musicxml"
             join_musicxml_files(musicxml_dir, combined_musicxml)
             console.print("[green][OK][/green] Created combined MusicXML\n")
 
-            # Step 4: Convert to MuseScore format
             console.print("[cyan]Converting to MuseScore format...[/cyan]")
             musescore_file = self.output_dir / "combined.mscx"
-            
+
             try:
                 convert_to_musescore_format(
                     combined_musicxml,

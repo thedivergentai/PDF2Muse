@@ -1,6 +1,7 @@
 """Command-line interface for PDF2Muse."""
 
 import logging
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -15,15 +16,40 @@ from .oemer_utils import download_checkpoints
 # Initialize Typer app
 app = typer.Typer(
     name="pdf2muse",
-    help="Convert PDF sheet music to MusicXML and MuseScore formats",
+    help=(
+        "Convert PDF sheet music to MusicXML and MuseScore formats.\n\n"
+        "Common convert options:\n"
+        "-o, --output DIR       Directory to save output files\n"
+        "--no-deskew            Disable image deskewing\n"
+        "--use-tf               Use TensorFlow instead of ONNX Runtime\n"
+        "--save-cache           Save model predictions for future use\n"
+        "--musescore-path PATH  Path to the MuseScore executable\n"
+        "--first-page INTEGER   First page to convert (1-indexed)\n"
+        "--last-page INTEGER    Last page to convert (1-indexed)\n"
+        "--verbose              Enable verbose logging\n\n"
+        "Run `pdf2muse convert --help` for the full conversion reference."
+    ),
     add_completion=False,
 )
 
 console = Console()
 
 
+def configure_windows_stdio() -> None:
+    """Use UTF-8 for stdout/stderr on Windows to avoid encoding errors."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except Exception:
+                pass
+
+
 def setup_logging(verbose: bool = False) -> None:
     """Configure logging with rich handler."""
+    configure_windows_stdio()
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
@@ -86,11 +112,6 @@ def convert(
         "--save-cache",
         help="Save model predictions for future use",
     ),
-    poppler_path: Optional[Path] = typer.Option(
-        None,
-        "--poppler-path",
-        help="Path to the Poppler bin directory (e.g. C:\\poppler\\bin)",
-    ),
     musescore_path: Optional[Path] = typer.Option(
         None,
         "--musescore-path",
@@ -131,7 +152,6 @@ def convert(
             deskew=deskew,
             use_tf=use_tf,
             save_cache=save_cache,
-            poppler_path=str(poppler_path) if poppler_path else None,
             musescore_path=str(musescore_path) if musescore_path else None,
             first_page=first_page,
             last_page=last_page,
@@ -161,11 +181,6 @@ def ui(
         "-p",
         help="Port to run the server on",
     ),
-    poppler_path: Optional[Path] = typer.Option(
-        None,
-        "--poppler-path",
-        help="Default path to the Poppler bin directory",
-    ),
     musescore_path: Optional[Path] = typer.Option(
         None,
         "--musescore-path",
@@ -181,11 +196,11 @@ def ui(
     Example:
         pdf2muse ui --port 8080
     """
+    configure_windows_stdio()
     try:
         from .ui import create_interface
-        
+
         interface = create_interface(
-            default_poppler=str(poppler_path) if poppler_path else None,
             default_musescore=str(musescore_path) if musescore_path else None,
         )
         interface.launch(
@@ -196,7 +211,7 @@ def ui(
 
     except ImportError:
         console.print("[red]Error:[/red] Gradio is not installed")
-        console.print("Install it with: pip install 'pdf2muse[gradio]' or pip install gradio")
+        console.print("Install it with: pip install 'pdf2muse[ui]' or pip install gradio")
         raise typer.Exit(code=1)
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")

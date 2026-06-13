@@ -14,6 +14,8 @@ def test_help():
     assert result.exit_code == 0
     assert "PDF2Muse" in result.stdout
     assert "Convert PDF sheet music" in result.stdout
+    for option in ("--output", "--no-deskew", "--use-tf", "--save-cache", "--verbose"):
+        assert option in result.stdout
 
 def test_convert_help():
     result = runner.invoke(app, ["convert", "--help"])

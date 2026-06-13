@@ -200,32 +200,102 @@ def test_pdf_to_png(mock_pdf_doc, sample_pdf, tmp_path):
 
 @patch("pdf2muse.core.subprocess.run")
 def test_process_image_with_oemer(mock_sub_run, sample_pdf, mock_image, tmp_path):
-    """Test executing oemer as a python module subprocess inside core pipeline."""
+    """Test executing oemer in a per-page subdirectory (concurrency-safe)."""
     musicxml_dir = tmp_path / "xmls"
     musicxml_dir.mkdir()
-    
-    # Mock oemer generating files
+    page_dir = musicxml_dir / mock_image.stem
+
     def side_effect(*args, **kwargs):
-        generated_file = musicxml_dir / f"{mock_image.stem}.musicxml"
+        page_dir.mkdir(parents=True, exist_ok=True)
+        generated_file = page_dir / f"{mock_image.stem}.musicxml"
         generated_file.write_text("<score></score>")
         return MagicMock(stdout="Success")
+
     mock_sub_run.side_effect = side_effect
-    
+
     pipeline = PDF2MusePipeline(pdf_path=str(sample_pdf), deskew=True)
-    xml_path = pipeline.process_image_with_oemer(mock_image, musicxml_dir)
-    
-    # Assert correct command executing oemer as a module via python executable
+    xml_path, err = pipeline.process_image_with_oemer(mock_image, musicxml_dir)
+
     mock_sub_run.assert_called_once_with(
-        [sys.executable, "-W", "ignore", "-m", "oemer.ete", str(mock_image)],
-        cwd=str(musicxml_dir),
+        [sys.executable, "-W", "ignore", "-m", "pdf2muse._oemer_cpu", str(mock_image)],
+        cwd=str(page_dir),
         env=ANY,
         check=True,
         capture_output=True,
         text=True,
     )
-    
+
+    assert err is None
     assert xml_path == musicxml_dir / "page_000.musicxml"
     assert xml_path.exists()
+
+
+@patch("pdf2muse.core.subprocess.run")
+def test_process_image_with_oemer_uses_tf_entrypoint_when_requested(
+    mock_sub_run, sample_pdf, mock_image, tmp_path
+):
+    """TensorFlow mode should keep using oemer's native --use-tf path."""
+    musicxml_dir = tmp_path / "xmls"
+    musicxml_dir.mkdir()
+    page_dir = musicxml_dir / mock_image.stem
+
+    def side_effect(*args, **kwargs):
+        page_dir.mkdir(parents=True, exist_ok=True)
+        generated_file = page_dir / f"{mock_image.stem}.musicxml"
+        generated_file.write_text("<score></score>")
+        return MagicMock(stdout="Success")
+
+    mock_sub_run.side_effect = side_effect
+
+    pipeline = PDF2MusePipeline(pdf_path=str(sample_pdf), deskew=True, use_tf=True)
+    xml_path, err = pipeline.process_image_with_oemer(mock_image, musicxml_dir)
+
+    mock_sub_run.assert_called_once_with(
+        [sys.executable, "-W", "ignore", "-m", "oemer.ete", str(mock_image), "--use-tf"],
+        cwd=str(page_dir),
+        env=ANY,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert err is None
+    assert xml_path == musicxml_dir / "page_000.musicxml"
+    assert xml_path.exists()
+
+
+@patch("pdf2muse.core.subprocess.run")
+def test_process_image_with_oemer_isolated_page_dirs(
+    mock_sub_run, sample_pdf, tmp_path
+):
+    """Concurrent workers must use separate cwd per page stem."""
+    musicxml_dir = tmp_path / "xmls"
+    musicxml_dir.mkdir()
+    page_a = tmp_path / "page_000.png"
+    page_b = tmp_path / "page_001.png"
+    page_a.write_bytes(b"png-a")
+    page_b.write_bytes(b"png-b")
+    cwds: list[str] = []
+
+    def side_effect(*args, **kwargs):
+        cwd = Path(kwargs["cwd"])
+        cwds.append(str(cwd))
+        cwd.mkdir(parents=True, exist_ok=True)
+        stem = cwd.name
+        (cwd / f"{stem}.musicxml").write_text("<score></score>")
+        return MagicMock(stdout="Success")
+
+    mock_sub_run.side_effect = side_effect
+
+    pipeline = PDF2MusePipeline(pdf_path=str(sample_pdf), deskew=True)
+    path_a, err_a = pipeline.process_image_with_oemer(page_a, musicxml_dir)
+    path_b, err_b = pipeline.process_image_with_oemer(page_b, musicxml_dir)
+
+    assert err_a is None and err_b is None
+    assert path_a == musicxml_dir / "page_000.musicxml"
+    assert path_b == musicxml_dir / "page_001.musicxml"
+    assert cwds == [str(musicxml_dir / "page_000"), str(musicxml_dir / "page_001")]
+    assert path_a != path_b
 
 
 @patch("pdf2muse.core.ensure_checkpoints")
@@ -256,7 +326,7 @@ def test_pipeline_run_success(
     mock_pdf_to_png.return_value = [png_path]
     
     xml_path = tmp_path / "page_000.musicxml"
-    mock_process_oemer.return_value = xml_path
+    mock_process_oemer.return_value = (xml_path, None)
     
     # Run pipeline
     result = pipeline.run()
@@ -302,7 +372,7 @@ def test_pipeline_run_fallback_if_musescore_missing(
     mock_pdf_to_png.return_value = [png_path]
     
     xml_path = tmp_path / "page_000.musicxml"
-    mock_process_oemer.return_value = xml_path
+    mock_process_oemer.return_value = (xml_path, None)
     
     # Fail MuseScore conversion
     mock_convert_ms.side_effect = RuntimeError("MuseScore not found")
