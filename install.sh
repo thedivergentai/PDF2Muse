@@ -90,17 +90,30 @@ echo -e "${C_BOLD}Starting installation with selected options...${C_RESET}"
 echo -e "${C_MAGENTA}===================================================${C_RESET}"
 echo -e ""
 
-# Create Virtual Environment if not exists
-if [ ! -d ".venv" ]; then
-    echo -e "${C_YELLOW}[INFO] Creating Python virtual environment in .venv...${C_RESET}"
-    python3 -m venv .venv
+# Create Virtual Environment if not exists (prefer venv/, fall back to .venv/)
+VENV_DIR=""
+if [ -f "venv/bin/activate" ]; then
+    VENV_DIR="venv"
+elif [ -f ".venv/bin/activate" ]; then
+    VENV_DIR=".venv"
 else
-    echo -e "${C_GREEN}[OK] Virtual environment .venv already exists.${C_RESET}"
+    echo -e "${C_YELLOW}[INFO] Creating Python virtual environment in venv...${C_RESET}"
+    python3 -m venv venv
+    VENV_DIR="venv"
 fi
+
+if [ -z "$VENV_DIR" ]; then
+    echo -e "${C_RED}[ERROR] Could not locate or create a virtual environment.${C_RESET}"
+    exit 1
+fi
+
+VENV_PATH="$(cd "$VENV_DIR" && pwd)"
+echo -e "${C_GREEN}[OK] Using virtual environment ${VENV_DIR}.${C_RESET}"
+echo -e "${C_GREEN}[OK] Virtual environment path: ${VENV_PATH}${C_RESET}"
 
 # Activate virtual environment
 echo -e "${C_YELLOW}[INFO] Activating virtual environment...${C_RESET}"
-source .venv/bin/activate
+source "${VENV_DIR}/bin/activate"
 
 # Upgrade pip
 echo -e "${C_YELLOW}[INFO] Upgrading pip...${C_RESET}"
@@ -122,6 +135,16 @@ echo -e ""
 echo -e "${C_BOLD}${C_GREEN}===================================================${C_RESET}"
 echo -e "${C_BOLD}${C_GREEN}🎉 PDF2Muse Onboarding Complete!${C_RESET}"
 echo -e "${C_BOLD}${C_GREEN}===================================================${C_RESET}"
+echo -e "Virtual environment:"
+echo -e "  ${C_CYAN}${VENV_PATH}${C_RESET}"
+echo -e ""
+echo -e "To activate it manually:"
+echo -e "  ${C_CYAN}source ${VENV_DIR}/bin/activate${C_RESET}"
+echo -e "To leave the environment later:"
+echo -e "  ${C_CYAN}deactivate${C_RESET}"
+echo -e "To run the CLI without activating:"
+echo -e "  ${C_CYAN}${VENV_DIR}/bin/python -m pdf2muse.cli convert [your_sheet.pdf]${C_RESET}"
+echo -e ""
 if [ "$UI_CHOICE" -eq 1 ]; then
     echo -e "To run the application:"
     echo -e "  ${C_CYAN}./run-ui.sh${C_RESET}"

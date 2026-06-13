@@ -23,7 +23,7 @@ set "C_BOLD=!ESC![1m"
 
 cls
 echo !C_BOLD!!C_MAGENTA!===================================================!C_RESET!
-echo !C_BOLD!!C_MAGENTA!  🎶  PDF2Muse - Interactive Onboarding Tool       !C_RESET!
+echo !C_BOLD!!C_MAGENTA!      PDF2Muse - Interactive Onboarding Tool       !C_RESET!
 echo !C_BOLD!!C_MAGENTA!===================================================!C_RESET!
 echo.
 echo Welcome! This interactive installer will guide you through setting up
@@ -107,22 +107,29 @@ echo !C_BOLD!Starting installation with selected options...!C_RESET!
 echo !C_MAGENTA!===================================================!C_RESET!
 echo.
 
-:: Create Virtual Environment if not exists
-if not exist .venv (
-    echo !C_YELLOW![INFO] Creating Python virtual environment in .venv...!C_RESET!
-    python -m venv .venv
+:: Create Virtual Environment if not exists (prefer venv/, fall back to .venv/)
+set "VENV_DIR="
+if exist venv\Scripts\activate.bat set "VENV_DIR=venv"
+if not defined VENV_DIR if exist .venv\Scripts\activate.bat set "VENV_DIR=.venv"
+
+if not defined VENV_DIR (
+    echo !C_YELLOW![INFO] Creating Python virtual environment in venv...!C_RESET!
+    python -m venv venv
     if %errorlevel% neq 0 (
         echo !C_RED![ERROR] Failed to create virtual environment.!C_RESET!
         pause
         exit /b 1
     )
+    set "VENV_DIR=venv"
 ) else (
-    echo !C_GREEN![OK] Virtual environment .venv already exists.!C_RESET!
+    echo !C_GREEN![OK] Virtual environment !VENV_DIR! already exists.!C_RESET!
 )
+set "VENV_PATH=%CD%\!VENV_DIR!"
+echo !C_GREEN![OK] Virtual environment path: !VENV_PATH!!C_RESET!
 
 :: Activate virtual environment
 echo !C_YELLOW![INFO] Activating virtual environment...!C_RESET!
-call .venv\Scripts\activate.bat
+call !VENV_DIR!\Scripts\activate.bat
 if %errorlevel% neq 0 (
     echo !C_RED![ERROR] Failed to activate virtual environment.!C_RESET!
     pause
@@ -152,8 +159,18 @@ if /i "!DOWNLOAD_CHOICE!"=="Y" (
 
 echo.
 echo !C_BOLD!!C_GREEN!===================================================!C_RESET!
-echo !C_BOLD!!C_GREEN!🎉 PDF2Muse Onboarding Complete!!C_RESET!
+echo !C_BOLD!!C_GREEN!PDF2Muse Onboarding Complete!!C_RESET!
 echo !C_BOLD!!C_GREEN!===================================================!C_RESET!
+echo Virtual environment:
+echo   !C_CYAN!!VENV_PATH!!C_RESET!
+echo.
+echo To activate it manually:
+echo   !C_CYAN!!VENV_DIR!\Scripts\activate!C_RESET!
+echo To leave the environment later:
+echo   !C_CYAN!deactivate!C_RESET!
+echo To run the CLI without activating:
+echo   !C_CYAN!!VENV_DIR!\Scripts\python.exe -m pdf2muse.cli convert [your_sheet.pdf]!C_RESET!
+echo.
 if "!UI_CHOICE!"=="1" (
     echo To run the application:
     echo   !C_CYAN!run-ui.bat!C_RESET!

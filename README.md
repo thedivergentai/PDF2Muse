@@ -90,6 +90,51 @@ cd PDF2Muse
 pip install -e ".[dev,ui]"
 ```
 
+### 4. Source Zip / Beginner-Friendly Local Install
+If you downloaded the GitHub source ZIP instead of cloning with Git, unzip it, open a
+terminal inside the extracted `PDF2Muse-main/` folder, and run the installer script.
+
+On Linux or macOS:
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+On Windows:
+```bat
+install.bat
+```
+
+The installer creates and uses a virtual environment named `venv/` in the PDF2Muse
+project folder. If `.venv/` already exists, it will use that instead. After installation
+you can activate the environment manually:
+
+```bash
+# Linux/macOS
+source venv/bin/activate
+deactivate
+```
+
+```bat
+:: Windows
+venv\Scripts\activate
+deactivate
+```
+
+Activation temporarily adds the virtual environment's `bin/` or `Scripts\` directory to
+the front of your terminal `PATH`, so commands like `pdf2muse` resolve to this local
+install. You can also run PDF2Muse without activating:
+
+```bash
+# Linux/macOS
+venv/bin/python -m pdf2muse.cli convert path/to/sheet_music.pdf
+```
+
+```bat
+:: Windows
+venv\Scripts\python.exe -m pdf2muse.cli convert path\to\sheet_music.pdf
+```
+
 ---
 
 ## 🛠️ How to Use
@@ -293,6 +338,17 @@ pip install "pdf2muse[ui]"
 
 #### Q: The conversion is running very slowly
 **A:** By default, PDF2Muse uses CPU-based ONNX Runtime which is fast and lightweight. If you have a compatible TensorFlow CUDA GPU environment, you can experiment with the `--use-tf` flag to run model inference using TensorFlow.
+
+#### Q: MuseScore 3 gives an error when opening the `.mscx` file
+**A:** PDF2Muse targets current MuseScore 4-style native exports when `.mscx` output is
+available. If you use MuseScore 3.x, try opening or importing the generated
+`combined.musicxml` file instead; MusicXML is the more portable interchange format.
+
+#### Q: The app installed correctly, but the recognized notes are poor
+**A:** Installation and transcription quality are separate concerns. PDF2Muse currently
+uses the open-source `oemer` OMR engine, and recognition quality can still be weak even
+for clean PDFs. Always review the generated MusicXML or MuseScore file before relying on
+it for performance, teaching, or publication.
 
 ---
 
