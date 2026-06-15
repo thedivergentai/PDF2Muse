@@ -2,18 +2,34 @@
 set -e
 
 echo "==================================================="
-echo "🚀 PDF2Muse - WebUI Launcher"
+echo "PDF2Muse - WebUI Launcher"
 echo "==================================================="
 
-# Check if virtual environment exists
-if [ ! -d ".venv" ]; then
-    echo "[WARNING] Virtual environment (.venv) not found."
-    echo "Running installer first..."
-    bash install.sh
+# Activate project virtual environment (prefer venv/, fall back to .venv/)
+VENV_DIR=""
+if [ -f "venv/bin/activate" ]; then
+    VENV_DIR="venv"
+elif [ -f ".venv/bin/activate" ]; then
+    VENV_DIR=".venv"
 fi
 
-# Activate virtual environment
-source .venv/bin/activate
+if [ -z "$VENV_DIR" ]; then
+    echo "[WARNING] Virtual environment not found (expected venv/ or .venv/)."
+    echo "Running installer first..."
+    bash install.sh
+    if [ -f "venv/bin/activate" ]; then
+        VENV_DIR="venv"
+    elif [ -f ".venv/bin/activate" ]; then
+        VENV_DIR=".venv"
+    fi
+fi
+
+if [ -z "$VENV_DIR" ]; then
+    echo "[ERROR] Virtual environment activation script not found. Please re-run install.sh."
+    exit 1
+fi
+
+source "${VENV_DIR}/bin/activate"
 
 # Check if Gradio is installed (as this launcher runs the WebUI)
 if ! python3 -c "import gradio" &> /dev/null; then
@@ -28,14 +44,6 @@ fi
 
 # Pre-flight Diagnostics
 echo "[INFO] Performing system environment diagnostics..."
-
-# Check Poppler
-if ! command -v pdftoppm &> /dev/null; then
-    echo "[WARNING] 'pdftoppm' (Poppler) was not found in your system PATH."
-    echo "If PDF to image conversion fails, please install Poppler via homebrew (brew install poppler) or apt (apt install poppler-utils)."
-else
-    echo "[OK] Poppler system utility detected."
-fi
 
 # Check MuseScore
 if ! command -v MuseScore4 &> /dev/null && ! command -v MuseScore &> /dev/null && ! command -v mscore &> /dev/null; then

@@ -25,11 +25,15 @@ MANIFEST
 
 # Virtual environments
 venv/
+.venv/
 ENV/
 env/
-.venv
+
+# Local agent docs (not for upload)
+AGENTS.md
 
 # IDEs
+.cursor/
 .vscode/
 .idea/
 *.swp
@@ -42,6 +46,8 @@ Thumbs.db
 
 # Project specific
 output/
+/IMSLP808315-PMLP1274159-Die_Grabesrose.pdf
+*.pdf
 *.musicxml
 *.mscx
 *.png
@@ -50,6 +56,7 @@ miniconda/
 # Temporary files
 *.tmp
 .cache/
+debug-*.log
 
 # Agent & Binary dependencies
 .agents/
