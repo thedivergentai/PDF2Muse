@@ -47,6 +47,11 @@ output/
 *.png
 miniconda/
 
+# Evaluation and dataset workspace
+datasets/raw/
+datasets/cache/
+evaluation/runs/
+
 # Temporary files
 *.tmp
 .cache/

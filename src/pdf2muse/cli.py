@@ -11,6 +11,8 @@ from rich.logging import RichHandler
 
 from . import __version__
 from .core import PDF2MusePipeline
+from .degrade import degrade_directory
+from .evaluation import EvaluationManifestError, run_evaluation
 from .oemer_utils import download_checkpoints
 
 # Initialize Typer app
@@ -26,6 +28,8 @@ app = typer.Typer(
         "--musescore-path PATH  Path to the MuseScore executable\n"
         "--first-page INTEGER   First page to convert (1-indexed)\n"
         "--last-page INTEGER    Last page to convert (1-indexed)\n"
+        "evaluate               Run an experimental local OMR evaluation\n"
+        "degrade                Create deterministic degraded image variants\n"
         "--verbose              Enable verbose logging\n\n"
         "Run `pdf2muse convert --help` for the full conversion reference."
     ),
@@ -169,6 +173,72 @@ def convert(
 
 
 @app.command()
+def evaluate(
+    manifest: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        help="Path to a local evaluation manifest JSON file",
+    ),
+    output_dir: Path = typer.Option(
+        "evaluation-output",
+        "--output",
+        "-o",
+        help="Directory to save evaluation reports and per-sample outputs",
+    ),
+    limit: Optional[int] = typer.Option(
+        None,
+        "--limit",
+        help="Maximum number of manifest samples to evaluate",
+    ),
+    first_page: Optional[int] = typer.Option(
+        None,
+        "--first-page",
+        help="Override first page for PDF samples (1-indexed)",
+    ),
+    last_page: Optional[int] = typer.Option(
+        None,
+        "--last-page",
+        help="Override last page for PDF samples (1-indexed)",
+    ),
+    use_musicdiff: bool = typer.Option(
+        True,
+        "--musicdiff/--no-musicdiff",
+        help="Enable or disable optional musicdiff/OMR-NED comparison",
+    ),
+):
+    """
+    Run an experimental OMR evaluation from a local manifest.
+
+    The manifest points to local PDFs and ground-truth MusicXML files. Dataset
+    downloads are intentionally handled outside this command.
+    """
+    try:
+        summary = run_evaluation(
+            manifest_path=manifest,
+            output_dir=output_dir,
+            limit=limit,
+            first_page=first_page,
+            last_page=last_page,
+            use_musicdiff=use_musicdiff,
+        )
+        console.print(
+            "[green][OK][/green] Evaluation complete: "
+            f"{summary.completed_samples}/{summary.total_samples} completed, "
+            f"{summary.failed_samples} failed"
+        )
+        console.print(f"Reports written to: {output_dir}")
+    except EvaluationManifestError as e:
+        console.print(f"[red]Manifest error:[/red] {e}")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def ui(
     share: bool = typer.Option(
         False,
@@ -213,6 +283,56 @@ def ui(
         console.print("[red]Error:[/red] Gradio is not installed")
         console.print("Install it with: pip install 'pdf2muse[ui]' or pip install gradio")
         raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def degrade(
+    input_dir: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        help="Directory containing source score images",
+    ),
+    output_dir: Path = typer.Argument(
+        ...,
+        file_okay=False,
+        dir_okay=True,
+        help="Directory where degraded images and metadata will be written",
+    ),
+    profile: str = typer.Option(
+        "scan-noise",
+        "--profile",
+        help="Degradation profile: scan-noise, blur, low-contrast, or shadow",
+    ),
+    seed: int = typer.Option(
+        0,
+        "--seed",
+        help="Deterministic seed for repeatable degradation",
+    ),
+):
+    """
+    Create deterministic degraded image variants for OMR experiments.
+
+    Ground-truth notation should stay linked externally through manifests; this
+    command only writes transformed images and degradation metadata.
+    """
+    try:
+        metadata = degrade_directory(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            profile=profile,
+            seed=seed,
+        )
+        console.print(
+            "[green][OK][/green] Degraded "
+            f"{len(metadata.files)} images with profile '{profile}'"
+        )
+        console.print(f"Output written to: {output_dir}")
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1)

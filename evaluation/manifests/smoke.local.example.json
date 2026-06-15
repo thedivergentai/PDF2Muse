@@ -1,0 +1,12 @@
+{
+  "samples": [
+    {
+      "id": "replace-with-local-sample-id",
+      "input": "../../datasets/raw/example/score.pdf",
+      "ground_truth": "../../datasets/raw/example/truth.musicxml",
+      "source": "local-example",
+      "first_page": 1,
+      "last_page": 1
+    }
+  ]
+}
