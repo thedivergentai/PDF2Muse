@@ -31,7 +31,11 @@ PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.v
 MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
 MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
 
-if [ "$MAJOR" -lt 3 ] || { [ "$MAJOR" -eq 3 ] && [ "$MINOR" -lt 9 ]; }; then
+if [ "$MAJOR" -lt 3 ]; then
+    echo -e "${C_RED}[ERROR] Python 3.9 or higher is required. Found version $PYTHON_VERSION.${C_RESET}"
+    exit 1
+fi
+if [ "$MAJOR" -eq 3 ] && [ "$MINOR" -lt 9 ]; then
     echo -e "${C_RED}[ERROR] Python 3.9 or higher is required. Found version $PYTHON_VERSION.${C_RESET}"
     exit 1
 fi
