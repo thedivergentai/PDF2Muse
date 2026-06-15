@@ -5,20 +5,25 @@ echo ===================================================
 echo PDF2Muse - WebUI Launcher
 echo ===================================================
 
-:: Check if virtual environment exists
-if not exist .venv (
-    echo [WARNING] Virtual environment (.venv) not found.
+:: Activate project virtual environment (prefer venv/, fall back to .venv/)
+set "VENV_DIR="
+if exist venv\Scripts\activate.bat set "VENV_DIR=venv"
+if not defined VENV_DIR if exist .venv\Scripts\activate.bat set "VENV_DIR=.venv"
+
+if not defined VENV_DIR (
+    echo [WARNING] Virtual environment not found ^(expected venv\ or .venv\^).
     echo Running installer first...
     call install.bat
+    if exist venv\Scripts\activate.bat set "VENV_DIR=venv"
+    if not defined VENV_DIR if exist .venv\Scripts\activate.bat set "VENV_DIR=.venv"
 )
 
-:: Activate virtual environment
-if exist .venv\Scripts\activate.bat (
-    call .venv\Scripts\activate.bat
-) else (
+if not defined VENV_DIR (
     echo [ERROR] Virtual environment activation script not found. Please re-run install.bat.
     exit /b 1
 )
+
+call %VENV_DIR%\Scripts\activate.bat
 
 :: Check if Gradio is installed (as this launcher runs the WebUI)
 python -c "import gradio" >nul 2>&1
@@ -34,15 +39,6 @@ if %errorlevel% neq 0 (
 
 :: Pre-flight Diagnostics
 echo [INFO] Performing system environment diagnostics...
-
-:: Check Poppler
-where pdftoppm >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [WARNING] 'pdftoppm' (Poppler) was not found in your system PATH.
-    echo If conversion fails, please specify the Poppler path in the WebUI's settings tab.
-) else (
-    echo [OK] Poppler system utility detected.
-)
 
 :: Check MuseScore
 where MuseScore4 >nul 2>&1
