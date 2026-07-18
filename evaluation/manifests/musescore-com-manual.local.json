@@ -1,0 +1,349 @@
+{
+  "samples": [
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/canon-in-d-johann-pachelbel/ground_truth.musicxml",
+      "id": "musescore-manual-canon-in-d-johann-pachelbel",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/canon-in-d-johann-pachelbel/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "canon-in-d-johann-pachelbel",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/canon-in-d-johann-pachelbel/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/canon-in-d-johann-pachelbel/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/chopin-nocturne-op-9-no-2-e-flat-major/ground_truth.musicxml",
+      "id": "musescore-manual-chopin-nocturne-op-9-no-2-e-flat-major",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/chopin-nocturne-op-9-no-2-e-flat-major/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "chopin-nocturne-op-9-no-2-e-flat-major",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/chopin-nocturne-op-9-no-2-e-flat-major/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/chopin-nocturne-op-9-no-2-e-flat-major/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/clair-de-lune-debussy/ground_truth.musicxml",
+      "id": "musescore-manual-clair-de-lune-debussy",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/clair-de-lune-debussy/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "clair-de-lune-debussy",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/clair-de-lune-debussy/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/clair-de-lune-debussy/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/etude-s-1413-in-g-minor-la-campanella-liszt/ground_truth.musicxml",
+      "id": "musescore-manual-etude-s-1413-in-g-minor-la-campanella-liszt",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/etude-s-1413-in-g-minor-la-campanella-liszt/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "etude-s-1413-in-g-minor-la-campanella-liszt",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/etude-s-1413-in-g-minor-la-campanella-liszt/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/etude-s-1413-in-g-minor-la-campanella-liszt/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/fur-elise-beethoven/ground_truth.musicxml",
+      "id": "musescore-manual-fur-elise-beethoven",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/fur-elise-beethoven/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "fur-elise-beethoven",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/fur-elise-beethoven/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/fur-elise-beethoven/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/g-minor-bach/ground_truth.musicxml",
+      "id": "musescore-manual-g-minor-bach",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/g-minor-bach/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "g-minor-bach",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/g-minor-bach/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/g-minor-bach/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/gymnopedie-no-1-satie/ground_truth.musicxml",
+      "id": "musescore-manual-gymnopedie-no-1-satie",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/gymnopedie-no-1-satie/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "gymnopedie-no-1-satie",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/gymnopedie-no-1-satie/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/gymnopedie-no-1-satie/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/liebestraum-s-541-no-3-in-a-major-liszt/ground_truth.musicxml",
+      "id": "musescore-manual-liebestraum-s-541-no-3-in-a-major-liszt",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/liebestraum-s-541-no-3-in-a-major-liszt/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "liebestraum-s-541-no-3-in-a-major-liszt",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/liebestraum-s-541-no-3-in-a-major-liszt/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/liebestraum-s-541-no-3-in-a-major-liszt/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/piano-sonata-no-11-k-331-3rd-movement-rondo-alla-turca/ground_truth.musicxml",
+      "id": "musescore-manual-piano-sonata-no-11-k-331-3rd-movement-rondo-alla-turca",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/piano-sonata-no-11-k-331-3rd-movement-rondo-alla-turca/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "piano-sonata-no-11-k-331-3rd-movement-rondo-alla-turca",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/piano-sonata-no-11-k-331-3rd-movement-rondo-alla-turca/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/piano-sonata-no-11-k-331-3rd-movement-rondo-alla-turca/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/prelude-i-in-c-major-bwv-846-well-tempered-clavier-first-book/ground_truth.musicxml",
+      "id": "musescore-manual-prelude-i-in-c-major-bwv-846-well-tempered-clavier-first-book",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/prelude-i-in-c-major-bwv-846-well-tempered-clavier-first-book/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "prelude-i-in-c-major-bwv-846-well-tempered-clavier-first-book",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/prelude-i-in-c-major-bwv-846-well-tempered-clavier-first-book/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/prelude-i-in-c-major-bwv-846-well-tempered-clavier-first-book/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/sonate-no-14-moonlight-1st-movement/ground_truth.musicxml",
+      "id": "musescore-manual-sonate-no-14-moonlight-1st-movement",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/sonate-no-14-moonlight-1st-movement/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "sonate-no-14-moonlight-1st-movement",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/sonate-no-14-moonlight-1st-movement/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/sonate-no-14-moonlight-1st-movement/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/sonate-no-14-moonlight-3rd-movement/ground_truth.musicxml",
+      "id": "musescore-manual-sonate-no-14-moonlight-3rd-movement",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/sonate-no-14-moonlight-3rd-movement/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "sonate-no-14-moonlight-3rd-movement",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/sonate-no-14-moonlight-3rd-movement/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/sonate-no-14-moonlight-3rd-movement/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/the-entertainer-scott-joplin/ground_truth.musicxml",
+      "id": "musescore-manual-the-entertainer-scott-joplin",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/the-entertainer-scott-joplin/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "the-entertainer-scott-joplin",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/the-entertainer-scott-joplin/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/the-entertainer-scott-joplin/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/wa-mozart-marche-turque-turkish-march-fingered/ground_truth.musicxml",
+      "id": "musescore-manual-wa-mozart-marche-turque-turkish-march-fingered",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/wa-mozart-marche-turque-turkish-march-fingered/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "wa-mozart-marche-turque-turkish-march-fingered",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/wa-mozart-marche-turque-turkish-march-fingered/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/wa-mozart-marche-turque-turkish-march-fingered/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    },
+    {
+      "difficulty_tags": [
+        "musescore-com",
+        "manual-download",
+        "clean-typeset"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/musescore-com/manual/waltz-in-a-minorchopin/ground_truth.musicxml",
+      "id": "musescore-manual-waltz-in-a-minorchopin",
+      "input": "../../datasets/benchmark-sources/musescore-com/manual/waltz-in-a-minorchopin/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-com-download",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Local MuseScore.com manual benchmark sample; verify uploader license before redistribution.",
+      "metadata": {
+        "original_download_stem": "waltz-in-a-minorchopin",
+        "source_mscz": "../../datasets/benchmark-sources/musescore-com/manual/waltz-in-a-minorchopin/source.mscz",
+        "source_mxl": "../../datasets/benchmark-sources/musescore-com/manual/waltz-in-a-minorchopin/source.mxl"
+      },
+      "source": "MuseScore.com manual download"
+    }
+  ]
+}

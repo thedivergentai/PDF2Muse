@@ -1,0 +1,104 @@
+{
+  "samples": [
+    {
+      "difficulty_tags": [
+        "generated-fixture",
+        "musescore-rendered",
+        "oemer-smoke",
+        "single-staff",
+        "multi-measure"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/cache/clean-typeset-generated/truth/generated-clean-typeset-001.musicxml",
+      "id": "generated-clean-typeset-001",
+      "input": "../../datasets/cache/clean-typeset-generated/pdfs/generated-clean-typeset-001.pdf",
+      "input_quality": {
+        "renderer": "musescore-cli",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Generated locally by PDF2Muse benchmark fixture script; PDF rendered via MuseScore CLI from paired MusicXML.",
+      "source": "generated-local-clean-typeset"
+    },
+    {
+      "difficulty_tags": [
+        "generated-fixture",
+        "musescore-rendered",
+        "oemer-smoke",
+        "single-staff",
+        "multi-measure"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/cache/clean-typeset-generated/truth/generated-clean-typeset-002.musicxml",
+      "id": "generated-clean-typeset-002",
+      "input": "../../datasets/cache/clean-typeset-generated/pdfs/generated-clean-typeset-002.pdf",
+      "input_quality": {
+        "renderer": "musescore-cli",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Generated locally by PDF2Muse benchmark fixture script; PDF rendered via MuseScore CLI from paired MusicXML.",
+      "source": "generated-local-clean-typeset"
+    },
+    {
+      "difficulty_tags": [
+        "generated-fixture",
+        "musescore-rendered",
+        "oemer-smoke",
+        "single-staff",
+        "multi-measure"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/cache/clean-typeset-generated/truth/generated-clean-typeset-003.musicxml",
+      "id": "generated-clean-typeset-003",
+      "input": "../../datasets/cache/clean-typeset-generated/pdfs/generated-clean-typeset-003.pdf",
+      "input_quality": {
+        "renderer": "musescore-cli",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Generated locally by PDF2Muse benchmark fixture script; PDF rendered via MuseScore CLI from paired MusicXML.",
+      "source": "generated-local-clean-typeset"
+    },
+    {
+      "difficulty_tags": [
+        "generated-fixture",
+        "musescore-rendered",
+        "oemer-smoke",
+        "single-staff",
+        "multi-measure"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/cache/clean-typeset-generated/truth/generated-clean-typeset-004.musicxml",
+      "id": "generated-clean-typeset-004",
+      "input": "../../datasets/cache/clean-typeset-generated/pdfs/generated-clean-typeset-004.pdf",
+      "input_quality": {
+        "renderer": "musescore-cli",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Generated locally by PDF2Muse benchmark fixture script; PDF rendered via MuseScore CLI from paired MusicXML.",
+      "source": "generated-local-clean-typeset"
+    },
+    {
+      "difficulty_tags": [
+        "generated-fixture",
+        "musescore-rendered",
+        "oemer-smoke",
+        "single-staff",
+        "multi-measure"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/cache/clean-typeset-generated/truth/generated-clean-typeset-005.musicxml",
+      "id": "generated-clean-typeset-005",
+      "input": "../../datasets/cache/clean-typeset-generated/pdfs/generated-clean-typeset-005.pdf",
+      "input_quality": {
+        "renderer": "musescore-cli",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "Generated locally by PDF2Muse benchmark fixture script; PDF rendered via MuseScore CLI from paired MusicXML.",
+      "source": "generated-local-clean-typeset"
+    }
+  ]
+}

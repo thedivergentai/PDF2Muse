@@ -1,310 +1,394 @@
-# PDF2Muse 🎶
+# PDF2Muse
+
+<div align="center">
 
 [![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Linter: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-Convert printed sheet music PDFs into digital, editable **MusicXML** 🎼 and **MuseScore (.mscx)** files using advanced Optical Music Recognition (OMR).
+Convert sheet music PDFs into MusicXML, with optional MuseScore export, using open-source Optical Music Recognition.
 
-PDF2Muse bridges the gap between static paper/digital scores and interactive music software. Under the hood, it leverages the powerful [oemer](https://github.com/BreezeWhite/oemer) machine learning OMR library to transcribe music with high precision.
+**Maintained by [Divergent AI](https://github.com/thedivergentai)**
 
----
-
-## 📖 Table of Contents
-* [💡 What is PDF2Muse? (Simple Intro)](#-what-is-pdf2muse-simple-intro)
-* [🚀 Quick Start](#-quick-start)
-* [📦 Installation Guide](#-installation-guide)
-* [🛠️ How to Use](#️-how-to-use)
-  * [Option A: Command Line Interface (CLI)](#option-a-command-line-interface-cli)
-  * [Option B: Interactive Web Interface (Web UI)](#option-b-interactive-web-interface-web-ui)
-* [🐍 Python API Reference (For Developers & LLMs)](#-python-api-reference-for-developers--llms)
-* [🧩 System Architecture & Data Flow](#-system-architecture--data-flow)
-  * [Codebase Structure](#codebase-structure)
-  * [Under the Hood: Data Pipeline](#under-the-hood-data-pipeline)
-  * [Model Management](#model-management)
-* [🎯 Tips for Best Results](#-tips-for-best-results)
-* [🐛 Troubleshooting & FAQ](#-troubleshooting--faq)
-* [🙏 Acknowledgements](#-acknowledgements)
-* [📜 License](#-license)
+</div>
 
 ---
 
-## 💡 What is PDF2Muse? (Simple Intro)
+## Project Status
 
-Have you ever had a PDF of sheet music and wished you could edit the notes, transpose the key, hear it play back, or print it out with your own changes? 
+PDF2Muse is an early revived project. It can render PDF pages, run the open-source [`oemer`](https://github.com/BreezeWhite/oemer) OMR engine, combine generated MusicXML pages, and optionally export a MuseScore `.mscx` file when the MuseScore CLI is available.
 
-Normally, you would have to manually re-type every single note into music notation software—a tedious process that can take hours or days. 
+It is not yet quality-proven. The current pipeline may produce weak or malformed notation, even for clean PDFs, and every generated score should be reviewed in notation software before use in performance, teaching, publication, or archival work.
 
-**PDF2Muse** does this work for you! It uses Artificial Intelligence to "read" your PDF sheet music and translate it into a digital format that standard music software can understand. 
-
-### What You Get:
-1. **MusicXML (`.musicxml`)**: The universal format for sheet music, compatible with almost all music software (MuseScore, Finale, Sibelius, Dorico, etc.).
-2. **MuseScore (`.mscx`)**: A native file format for **[MuseScore](https://musescore.org/)**, the world's most popular free and open-source sheet music editor.
-
-> [!NOTE]
-> **Zero Complex Setup:** Unlike older OMR software, PDF2Muse does *not* require you to install external system tools like Poppler or Java to perform the conversion. It is fully self-contained!
+The next phase of development is about measurement first: building repeatable evaluation tools, comparing output against ground-truth MusicXML/MEI datasets, and using those results to decide whether synthetic degradation or fine-tuning work is justified.
 
 ---
 
-## 🚀 Quick Start
+## A Note From Divergent AI
 
-Get up and running in less than two minutes:
+PDF2Muse has seen enough interest that it is worth picking up again with a more honest, evidence-driven approach.
 
-1. **Install PDF2Muse with Web UI support:**
-   ```bash
-   pip install -U "pdf2muse[ui]"
-   ```
+The original idea still matters: many musicians, composers, teachers, archivists, and hobbyists have PDFs or scanned scores that they would rather edit, transpose, search, and preserve as structured notation. The project is not there yet. In its current state, it is useful for experimentation and development, but not something I want to present as a polished or reliably useful product.
 
-2. **Launch the interactive Web App:**
-   ```bash
-   pdf2muse ui
-   ```
-   *This opens a friendly page in your web browser where you can simply drag-and-drop your PDFs and download your editable music files!*
+I am bringing the project back with a stronger focus on evaluation, quality thresholds, and practical ML workflows. The immediate goal is to find or assemble datasets that pair score images or PDFs with trusted symbolic notation, run PDF2Muse against them, and let the results guide the work instead of relying on vague accuracy claims.
+
+If the project can be made genuinely useful, I want it to serve the community of passionate music lovers, composers, and open-source builders who care about making notation more accessible.
+
+-- Divergent AI
 
 ---
 
-## 📦 Installation Guide
+## Quick Navigation
 
-PDF2Muse supports **Windows**, **macOS**, and **Linux** environments running **Python 3.9 or higher**.
+| Start | Use | Evaluate | Understand | Contribute |
+|:---:|:---:|:---:|:---:|:---:|
+| [Quick Start](#quick-start) | [How To Use](#how-to-use) | [Quality Roadmap](#quality-roadmap) | [Architecture](#architecture) | [Development](#development) |
 
-Choose the installation option that best fits your workflow:
+---
 
-### 1. Standard Install (Command Line Only)
-Ideal if you only plan to use the terminal or want a lightweight installation:
+## What PDF2Muse Does
+
+PDF2Muse is a Python tool for converting sheet music PDFs into editable notation formats:
+
+1. It renders PDF pages into high-resolution page images with `pypdfium2`.
+2. It runs `oemer` on each page image to generate page-level MusicXML.
+3. It combines generated page MusicXML files into `combined.musicxml`.
+4. It optionally calls the MuseScore CLI to export `combined.mscx`.
+
+MusicXML is the primary output. MuseScore `.mscx` export is a convenience layer and depends on MuseScore being installed or passed with `--musescore-path`.
+
+## What To Expect
+
+PDF2Muse is most likely to behave reasonably on clean, standard Western staff notation. It is more likely to fail on handwritten manuscripts, low-contrast scans, skewed or cropped pages, complex layouts, heavy annotations, tablature, and unusual contemporary notation.
+
+The current project does not publish measured accuracy numbers yet. Until evaluation reports exist, treat every conversion as a draft that needs human review.
+
+---
+
+## Quick Start
+
+Install with the Web UI dependencies:
+
 ```bash
-pip install pdf2muse
+pip install -U "pdf2muse[ui]"
 ```
 
-### 2. Full Install (With Interactive Web Interface)
-Recommended for most users. Installs the Gradio web UI and its dependencies:
-```bash
-pip install "pdf2muse[ui]"
-```
-
-### 3. Developer & Contributor Install
-If you plan to modify PDF2Muse, run tests, or format the codebase:
-```bash
-git clone https://github.com/thedivergentai/PDF2Muse.git
-cd PDF2Muse
-pip install -e ".[dev,ui]"
-```
-
----
-
-## 🛠️ How to Use
-
-PDF2Muse gives you two ways to interact with the conversion pipeline: a command-line interface (CLI) and a web interface (Web UI).
-
-### Option A: Command Line Interface (CLI)
-
-Use simple terminal commands to batch-convert or automate your sheet music transcriptions.
-
-#### Convert a PDF File
-To convert a PDF with the default settings (saves results in an `output/` folder):
-```bash
-pdf2muse convert path/to/sheet_music.pdf
-```
-
-#### CLI Reference & Options
-
-| Command / Option | Description | Example |
-| :--- | :--- | :--- |
-| `pdf2muse convert <file>` | Primary command to run the OMR conversion pipeline on a PDF. | `pdf2muse convert sonata.pdf` |
-| `-o`, `--output <dir>` | Specify a custom directory to save your output files (defaults to `output`). | `pdf2muse convert sonata.pdf -o ./my_scores` |
-| `--no-deskew` | Disable automatic page straightening. (Keep enabled unless scans are already perfectly aligned). | `pdf2muse convert sonata.pdf --no-deskew` |
-| `--use-tf` | Use TensorFlow for OMR instead of the default ONNX Runtime engine. | `pdf2muse convert sonata.pdf --use-tf` |
-| `--save-cache` | Save OMR model predictions to a cache for faster re-processing. | `pdf2muse convert sonata.pdf --save-cache` |
-| `--verbose` | Enable deep, detailed debug logs in the terminal. | `pdf2muse convert sonata.pdf --verbose` |
-| `--help` | Show detailed help instructions for any command. | `pdf2muse convert --help` |
-
----
-
-### Option B: Interactive Web Interface (Web UI)
-
-If you prefer a visual interface, you can run PDF2Muse as a local web application.
+Launch the local Web UI:
 
 ```bash
 pdf2muse ui
 ```
 
-* **Custom Port:** To run the web server on a specific port (e.g., 8080):
-  ```bash
-  pdf2muse ui --port 8080
-  ```
-* **Shareable Link:** Create a secure, public link to share your web app with others or use it from a mobile device:
-  ```bash
-  pdf2muse ui --share
-  ```
+Or run a small CLI smoke test on the first page of a score:
+
+```bash
+pdf2muse convert path/to/sheet_music.pdf --first-page 1 --last-page 1 -o output
+```
 
 ---
 
-## 🐍 Python API Reference (For Developers & LLMs)
+## Installation
 
-If you are building custom applications, writing scripts, or using an LLM to integrate PDF2Muse, you can interact with the transcription pipeline programmatically.
+PDF2Muse supports Windows, macOS, and Linux with Python 3.9 or newer.
 
-### The `PDF2MusePipeline` Class
+### Standard Install
 
-The core conversion routine is managed by the `PDF2MusePipeline` class located in `pdf2muse.core`.
+```bash
+pip install pdf2muse
+```
+
+### Install With Web UI
+
+```bash
+pip install "pdf2muse[ui]"
+```
+
+### Developer Install
+
+```bash
+git clone https://github.com/thedivergentai/PDF2Muse.git
+cd PDF2Muse
+python -m venv venv
+venv\Scripts\pip.exe install -e ".[dev,ui]"
+```
+
+On macOS or Linux:
+
+```bash
+python3 -m venv venv
+venv/bin/pip install -e ".[dev,ui]"
+```
+
+The installer scripts are still available for local source installs:
+
+```bat
+install.bat
+```
+
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+---
+
+## How To Use
+
+### Command Line
+
+Convert a PDF and write outputs to `output/`:
+
+```bash
+pdf2muse convert path/to/sheet_music.pdf
+```
+
+Useful options:
+
+| Option | Description |
+| :--- | :--- |
+| `-o`, `--output DIR` | Directory for generated files. |
+| `--first-page N` | First PDF page to convert, 1-indexed. Useful for quick checks. |
+| `--last-page N` | Last PDF page to convert, 1-indexed. |
+| `--render-dpi N` | PDF render DPI for OMR input images. Defaults to 300. |
+| `--oemer-timeout N` | Seconds before one page-level `oemer` process is marked failed. |
+| `--no-deskew` | Disable automatic deskewing. |
+| `--use-tf` | Use oemer's TensorFlow path instead of the default CPU ONNX wrapper. |
+| `--save-cache` | Ask oemer to save prediction cache data. |
+| `--musescore-path PATH` | Path to a MuseScore executable for `.mscx` export. |
+| `--model-backend NAME` | OMR backend slot for experiments: `oemer-stock`, reserved `oemer-custom`, or non-runnable `legato-experimental`. |
+| `--checkpoint-dir DIR` | Reserved custom oemer-compatible checkpoint directory option; do not use for model claims until runtime override validation passes. |
+| `--verbose` | Enable detailed logging. |
+
+Each conversion writes `conversion_report.json` beside the outputs. The report
+records page-level OMR status, MusicXML merge status, final MusicXML parse
+status, and optional MuseScore export status. Treat generated notation as a
+draft and review it in notation software before use.
+
+### Web UI
+
+```bash
+pdf2muse ui
+```
+
+Run on a custom port:
+
+```bash
+pdf2muse ui --port 8080
+```
+
+Create a Gradio share link:
+
+```bash
+pdf2muse ui --share
+```
+
+### Experimental Evaluation Command
+
+The evaluation command is intended for developers and maintainers. It compares generated MusicXML against local ground-truth samples described by a manifest.
+
+```bash
+pdf2muse evaluate evaluation/manifests/smoke.local.example.json --output evaluation/runs/smoke
+```
+
+This command is part of the quality roadmap. It reports parseability, optional
+MusicXML library import status, optional MuseScore import status, structural
+metrics, failure categories, and optional `musicdiff`/OMR-NED integration when
+evaluation dependencies are installed.
+
+For a generated local clean-typeset fixture set:
+
+```bash
+venv\Scripts\python.exe scripts\clean_typeset_benchmark.py --sample-count 20 --output-dir datasets\cache\clean-typeset-generated --manifest evaluation\manifests\clean-typeset.local.json
+venv\Scripts\python.exe -m pdf2muse.cli evaluate evaluation\manifests\clean-typeset.local.json --output evaluation\runs\clean-typeset-stock-smoke --limit 1 --no-musicdiff --oemer-timeout 90
+```
+
+The first smoke report is documented in
+`docs/evaluation/clean-typeset-baseline-report.md`. It is a runtime baseline,
+not an accuracy claim: the generated smoke fixture currently times out before
+MusicXML is produced.
+
+A real public-domain Mutopia PDF smoke is documented in
+`docs/evaluation/public-score-smoke-report.md`. With a 300-second page timeout,
+that run produced parseable MusicXML. MuseScore `.mscx` export still requires a
+local MuseScore CLI.
+
+The first OpenScore CC0 ground-truth benchmark attempt is documented in
+`docs/evaluation/openscore-benchmark-report.md`. OpenScore provides suitable
+symbolic ground truth, but this environment still needs MuseScore CLI or another
+trusted renderer to create benchmark-quality PDF inputs.
+
+### Experimental Degradation Command
+
+The degradation command creates deterministic damaged image variants for OMR experiments. It does not change ground-truth notation; use manifests to keep degraded images linked to their source MusicXML.
+
+```bash
+pdf2muse degrade datasets/raw/example/images datasets/cache/example-scan-noise --profile scan-noise --severity medium --seed 123
+```
+
+Available profiles are `scan-noise`, `blur`, `low-contrast`, `shadow`,
+`jpeg-artifacts`, `skew`, and `uneven-lighting`. Severity can be `light`,
+`medium`, or `heavy`. These degraded variants are robustness stress tests, not
+accuracy claims.
+
+---
+
+## Python API
 
 ```python
 from pathlib import Path
 from pdf2muse.core import PDF2MusePipeline
 
-# 1. Initialize the conversion pipeline
 pipeline = PDF2MusePipeline(
-    pdf_path="piano_sonata.pdf",       # Path to input PDF file (absolute or relative)
-    output_dir="my_transcriptions",    # Directory where resulting MusicXML/MSCX will be written
-    deskew=True,                       # Auto-straighten pages (highly recommended)
-    use_tf=False,                      # Use ONNX Runtime for faster machine learning inference
-    save_cache=False                   # Set to True to cache intermediate OMR predictions
+    pdf_path="piano_sonata.pdf",
+    output_dir="my_transcriptions",
+    deskew=True,
+    use_tf=False,
+    save_cache=False,
+    first_page=1,
+    last_page=1,
 )
 
-# 2. Run the pipeline
-# This will automatically download necessary machine learning models on the first run.
-# Returns: Path object pointing to the created MuseScore (.mscx) file.
-try:
-    mscx_file: Path = pipeline.run()
-    print(f"🎉 Success! MuseScore file generated at: {mscx_file}")
-except RuntimeError as e:
-    print(f"❌ Conversion failed: {e}")
+result_path: Path = pipeline.run()
+print(result_path)
 ```
 
-### Advanced Programmatic Helpers
-
-You can also use lower-level functions directly from the package:
+Lower-level helpers are available for checkpoint management and MusicXML conversion:
 
 ```python
 from pathlib import Path
 from pdf2muse.musicxml import join_musicxml_files, convert_to_musescore_format
 from pdf2muse.oemer_utils import download_checkpoints, ensure_checkpoints
 
-# Force pre-download or update model checkpoints
 download_checkpoints(force=False)
-
-# Check if model checkpoints are already downloaded locally
 ensure_checkpoints()
 
-# Manually combine a directory of individual page MusicXML files into one multi-page score
 join_musicxml_files(
-    input_dir=Path("./temp_pages"), 
-    output_file=Path("./output/combined.musicxml")
+    input_dir=Path("./temp_pages"),
+    output_file=Path("./output/combined.musicxml"),
 )
 
-# Convert a combined MusicXML file to a MuseScore (.mscx) format wrapper
 convert_to_musescore_format(
-    input_file=Path("./output/combined.musicxml"), 
-    output_file=Path("./output/combined.mscx")
+    input_file=Path("./output/combined.musicxml"),
+    output_file=Path("./output/combined.mscx"),
 )
 ```
 
 ---
 
-## 🧩 System Architecture & Data Flow
+## Quality Roadmap
 
-### Codebase Structure
+The project needs repeatable evidence before it can claim usefulness. The current roadmap is:
 
-Understanding the layout of the `pdf2muse` package:
+1. Identify public OMR datasets with score images or PDFs plus MusicXML, MEI, MIDI, Humdrum, or comparable ground truth.
+2. Build a manifest-driven evaluation harness that runs PDF2Muse on curated local samples.
+3. Measure parseability, structural differences, and notation-level differences where tooling supports it.
+4. Run small baseline evaluations across clean printed, scanned, degraded, and handwritten examples.
+5. Use observed failures to design synthetic degradation workflows.
+6. Consider fine-tuning only after licensing, output representation, data quality, and compute requirements are clear.
 
-```
-PDF2Muse/
-├── src/
-│   └── pdf2muse/
-│       ├── __init__.py       # Package entry points & version info
-│       ├── cli.py            # Typer CLI application definitions
-│       ├── core.py           # Main orchestration pipeline (PDF2MusePipeline)
-│       ├── oemer_utils.py    # OMR model downloader and checkpoint handlers
-│       ├── musicxml.py       # XML structural parsers to join and wrap music scores
-│       └── ui.py             # Gradio-based interactive Web UI
-├── tests/                    # Unit and integration test suites
-├── pyproject.toml            # Modern project packaging configuration & metadata
-├── README.md                 # System overview and user documentation
-└── .gitignore
-```
+Candidate datasets under review include DoReMi, OpenScore Lieder/String Quartets, Debussy handwritten OMR datasets, MusiCorpus, CollabScore, `zzsi/openscore`, GrandStaff-LMX, PrIMuS/Camera-PrIMuS, DeepScoresV2, and MUSCIMA++.
+
+The preferred metric direction is parseability first, then `musicdiff`/OMR-NED where possible, with structural MusicXML fallbacks for malformed or unsupported outputs.
 
 ---
 
-### Under the Hood: Data Pipeline
-
-Below is the step-by-step processing workflow executed when a conversion request is initiated:
+## Architecture
 
 ```mermaid
 flowchart TD
-    A[Input PDF File] --> B[pypdfium2 PDF Renderer]
-    B -->|Convert at 300 DPI| C[Page Images: page_001.png, page_002.png...]
-    C --> D[oemer OMR Core Engine]
-    D -->|Machine Learning Inference| E[Page MusicXMLs: page_001.musicxml, ...]
-    E --> F[join_musicxml_files]
-    F -->|XML Merge & Sort| G[combined.musicxml]
-    G --> H[convert_to_musescore_format]
-    H -->|Structure wrapping| I[combined.mscx MuseScore file]
-    I --> J[Success Output Directory]
+    inputPdf[Input PDF] --> renderPdf[pypdfium2 PDF Renderer]
+    renderPdf --> pageImages[Page PNG Images]
+    pageImages --> oemerEngine[oemer OMR Engine]
+    oemerEngine --> pageXml[Page MusicXML Files]
+    pageXml --> joinXml[join_musicxml_files]
+    joinXml --> combinedXml[combined.musicxml]
+    combinedXml --> museScore[MuseScore CLI Optional]
+    museScore --> mscx[combined.mscx]
+    combinedXml --> primaryXml[Primary MusicXML Output]
 ```
 
-1. **PDF to Images:** `pypdfium2` reads the PDF and converts each page to a high-resolution PNG image (rendered at exactly 300 DPI, the optimal resolution for Optical Music Recognition).
-2. **OMR Processing:** The engine runs `oemer` on each page image to extract musical symbols, durations, staves, and notes.
-3. **MusicXML Consolidation:** Individual XML files representing each page are programmatically merged into a single multi-page `combined.musicxml` document, preserving measure order and parts.
-4. **MuseScore Packaging:** The unified MusicXML score is wrapped in a native MuseScore XML schema format (`combined.mscx`) for instant compatibility with MuseScore.
+Package layout:
+
+```text
+PDF2Muse/
+├── src/pdf2muse/
+│   ├── __init__.py
+│   ├── cli.py
+│   ├── core.py
+│   ├── degrade.py
+│   ├── evaluation.py
+│   ├── musicxml.py
+│   ├── oemer_utils.py
+│   └── ui.py
+├── tests/
+├── docs/
+├── evaluation/
+├── datasets/
+├── pyproject.toml
+└── README.md
+```
 
 ---
 
-### Model Management
+## Development
 
-PDF2Muse utilizes two pre-trained deep learning models under the hood:
-* **`unet_big`** (1st stage): Performs layout analysis and staff-line extraction.
-* **`seg_net`** (2nd stage): Detects musical symbols, notes, clefs, and accidentals.
+Use the project virtual environment for tests and local commands:
 
-These models are distributed as optimized **ONNX** files (`1st_model.onnx`, `2nd_model.onnx`). 
+```bat
+venv\Scripts\python.exe -m pytest tests/ -v
+```
 
-**Where are models saved?**
-PDF2Muse downloads the checkpoints automatically on first run and stores them in your Python installation's `site-packages/oemer/checkpoints/` directory. This keeps your working workspace clutter-free.
+On macOS or Linux:
 
----
-
-## 🎯 Tips for Best Results
-
-Optical Music Recognition is an intricate task. For the absolute best conversion accuracy, ensure your sheet music fits the following guidelines:
-
-* **High Resolution:** Scans should be clear and high-resolution (300 DPI or higher). Dark, blurry, or low-contrast PDFs will result in missing notes.
-* **Standard Notation:** PDF2Muse excels at standard Western classical music notation. Custom jazz charts, handwritten manuscripts, tab notation, or avant-garde visual scores will not transcribe accurately.
-* **No Manual Markups:** Pencil markings, highlights, annotations, or severe creases on the original scan can confuse the AI model.
-* **Aligned Scans:** Ensure the sheet music pages are straight. If they are slightly rotated, ensure that `--deskew` (straightening) is turned on (it is on by default).
-
----
-
-## 🐛 Troubleshooting & FAQ
-
-#### Q: How accurate is the conversion? Do I need to review it?
-**A:** Just like Optical Character Recognition (OCR) for text, OMR is rarely 100% perfect. PDF2Muse will transcribe the vast majority of notes, staves, and clefs correctly, saving you hours of manual transcription. However, we highly recommend opening the final `.mscx` file in **MuseScore** to quickly review, clean up, and polish any misplaced notes or timings.
-
-#### Q: "Gradio is not installed" Error when running Web UI
-**A:** You likely installed the basic version of PDF2Muse. Simply install the UI dependencies by running:
 ```bash
-pip install "pdf2muse[ui]"
+venv/bin/python -m pytest tests/ -v
 ```
 
-#### Q: "Command not found: pdf2muse"
-**A:** This occurs if your Python installation's `Scripts` directory is not added to your system's PATH. You can solve this in two ways:
-1. Add the Python scripts directory to your system environment PATH.
-2. Or, run the tool directly using Python's module launcher:
-   ```bash
-   python -m pdf2muse.cli convert sheet_music.pdf
-   ```
+For quick conversion checks, limit the page range:
 
-#### Q: The conversion is running very slowly
-**A:** By default, PDF2Muse uses CPU-based ONNX Runtime which is fast and lightweight. If you have a compatible TensorFlow CUDA GPU environment, you can experiment with the `--use-tf` flag to run model inference using TensorFlow.
+```bat
+venv\Scripts\python.exe -m pdf2muse.cli convert path\to\score.pdf --first-page 1 --last-page 1
+```
+
+Real OMR runs can be slow on CPU. Unit tests should mock OMR, model downloads, and MuseScore export unless a manual slow test is explicitly intended.
 
 ---
 
-## 🙏 Acknowledgements
+## Troubleshooting
 
-This project is built upon the phenomenal work of the **[oemer](https://github.com/BreezeWhite/oemer)** project. We extend our sincere gratitude to the oemer team and contributors for creating and sharing their state-of-the-art optical music recognition framework.
+### How accurate is PDF2Muse?
+
+The project does not publish measured accuracy yet. Some outputs may be useful drafts; others may be poor or malformed. Always inspect the generated MusicXML or MuseScore file manually.
+
+### Why did I only get `combined.musicxml`?
+
+MuseScore `.mscx` export requires the MuseScore CLI. If MuseScore is missing or conversion fails, PDF2Muse falls back to the combined MusicXML file.
+
+### Why is conversion slow?
+
+PDF rendering and OMR inference can be CPU-heavy. Use `--first-page` and `--last-page` for quick checks.
+
+### Why is recognition poor on a clean PDF?
+
+Installation success and notation quality are separate concerns. The current `oemer`-backed pipeline still needs systematic evaluation and likely targeted improvements.
 
 ---
 
-## 📜 License
+## Acknowledgements
 
-PDF2Muse is open-source software licensed under the **[MIT License](LICENSE)**. Feel free to copy, modify, and distribute it as needed!
+PDF2Muse builds on the open-source [`oemer`](https://github.com/BreezeWhite/oemer) project and the broader Optical Music Recognition research community.
 
 ---
-*Created and maintained with ❤️ by [TheDivergentAI](https://github.com/thedivergentai)*
+
+## License
+
+PDF2Muse is open-source software licensed under the [MIT License](LICENSE).
+
+---
+
+<div align="center">
+
+**Authored and maintained by [Divergent AI](https://github.com/thedivergentai)**
+
+</div>

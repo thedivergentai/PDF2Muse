@@ -53,6 +53,14 @@ output/
 *.png
 miniconda/
 
+# Evaluation and dataset workspace
+datasets/raw/
+datasets/benchmark-sources/
+datasets/cache/
+datasets/vendor/
+datasets/tools/
+evaluation/runs/
+
 # Temporary files
 *.tmp
 .cache/
