@@ -72,107 +72,48 @@ def mock_pdf(tmp_path):
 
 
 
+VALID_UI_MUSICXML = """<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1"><measure number="1"><note><rest/><duration>1</duration></note></measure></part>
+</score-partwise>
+"""
+
+
 def make_pipeline_mock(*args, **kwargs):
-
-    """Dynamic instantiator for PDF2MusePipeline mock that intercepts output_dir."""
-
-    output_dir = kwargs.get("output_dir", "output")
-
-    out_path = Path(output_dir)
-
-
-
+    """Mock PDF2MusePipeline that runs via pipeline.run()."""
+    output_dir = Path(kwargs.get("output_dir", "output"))
+    output_dir.mkdir(parents=True, exist_ok=True)
     instance = MagicMock()
+    instance.output_dir = output_dir
+    instance.conversion_report = {
+        "model_backend": {"name": kwargs.get("model_backend", "oemer-stock")},
+        "pages": [{"status": "completed"}],
+        "final_musicxml": {
+            "status": "ok",
+            "structure": {"parts": 1, "measures": 1, "notes": 1},
+        },
+        "join": {"files_joined": 1, "files_skipped": 0},
+    }
 
-    instance.output_dir = out_path
+    def mock_run(progress_callback=None):
+        combined = output_dir / "combined.musicxml"
+        combined.write_text(VALID_UI_MUSICXML, encoding="utf-8")
+        mscx = output_dir / "combined.mscx"
+        mscx.write_text("<musescore></musescore>", encoding="utf-8")
+        if progress_callback:
+            progress_callback(0.25, "OMR")
+            progress_callback(1.0, "Complete")
+        return mscx
 
-    instance.musescore_path = None
-
-
-
-    def mock_pdf_to_png(image_dir):
-
-        image_dir = Path(image_dir)
-
-        image_dir.mkdir(parents=True, exist_ok=True)
-
-        png = image_dir / "page_000.png"
-
-        png.write_bytes(b"png")
-
-        return [png]
-
-
-
-    def mock_process_image_with_oemer(image_path, musicxml_dir):
-
-        musicxml_dir = Path(musicxml_dir)
-
-        musicxml_dir.mkdir(parents=True, exist_ok=True)
-
-        out = musicxml_dir / f"{Path(image_path).stem}.musicxml"
-
-        out.write_text("<score></score>")
-
-        return out, None
-
-
-
-    instance.pdf_to_png.side_effect = mock_pdf_to_png
-
-    instance.process_image_with_oemer.side_effect = mock_process_image_with_oemer
-
-
-
+    instance.run.side_effect = mock_run
     return instance
 
 
-
-
-
-@patch("pdf2muse.ui.ensure_checkpoints")
-
-@patch("pdf2muse.ui.join_musicxml_files")
-
-@patch("pdf2muse.ui.convert_to_musescore_format")
-
 @patch("pdf2muse.ui.PDF2MusePipeline", side_effect=make_pipeline_mock)
-
-def test_convert_pdf_success(
-
-    mock_pipeline_class,
-
-    mock_msc_convert,
-
-    mock_join,
-
-    mock_checkpoints,
-
-    mock_pdf,
-
-):
+def test_convert_pdf_success(mock_pipeline_class, mock_pdf):
 
     """Test successful single PDF conversion in UI."""
-
-    def write_outputs(musicxml_dir, combined_path):
-
-        Path(combined_path).parent.mkdir(parents=True, exist_ok=True)
-
-        Path(combined_path).write_text("<score></score>")
-
-
-
-    def write_mscx(xml_path, mscx_path, musescore_path=None):
-
-        Path(mscx_path).write_text("<musescore></musescore>")
-
-
-
-    mock_join.side_effect = write_outputs
-
-    mock_msc_convert.side_effect = write_mscx
-
-
 
     status, xml_path, mscx_path, _skeleton, _btn = _final_result(
 
@@ -191,6 +132,8 @@ def test_convert_pdf_success(
 
 
     assert "conversion complete" in status.lower()
+    assert "review" in status.lower()
+    assert "quality scorecard" in status.lower()
 
     assert xml_path is not None
 
@@ -202,26 +145,12 @@ def test_convert_pdf_success(
 
 
 
-@patch("pdf2muse.ui.ensure_checkpoints")
-@patch("pdf2muse.ui.join_musicxml_files")
-@patch("pdf2muse.ui.convert_to_musescore_format")
 @patch("pdf2muse.ui.PDF2MusePipeline", side_effect=make_pipeline_mock)
-def test_convert_pdf_prefers_gradio_file_path(
-    mock_pipeline_class,
-    mock_msc_convert,
-    mock_join,
-    mock_checkpoints,
-    tmp_path,
-):
+def test_convert_pdf_prefers_gradio_file_path(mock_pipeline_class, tmp_path):
     """Newer Gradio FileData objects expose temp file paths via .path."""
     pdf = tmp_path / "uploaded.pdf"
     pdf.write_bytes(b"%PDF-1.4 mock pdf data")
     file_data = SimpleNamespace(path=str(pdf), name="original-filename.pdf")
-
-    mock_join.side_effect = lambda _dir, path: Path(path).write_text("<score></score>")
-    mock_msc_convert.side_effect = lambda xml, mscx, musescore_path=None: Path(
-        mscx
-    ).write_text("<mscx></mscx>")
 
     status, xml_path, mscx_path, _skeleton, _btn = _final_result(
         convert_pdf(file_data)
@@ -236,39 +165,9 @@ def test_convert_pdf_prefers_gradio_file_path(
 
 
 
-@patch("pdf2muse.ui.ensure_checkpoints")
-
-@patch("pdf2muse.ui.join_musicxml_files")
-
-@patch("pdf2muse.ui.convert_to_musescore_format")
-
 @patch("pdf2muse.ui.PDF2MusePipeline", side_effect=make_pipeline_mock)
-
-def test_convert_pdf_yields_progress(
-
-    mock_pipeline_class,
-
-    mock_msc_convert,
-
-    mock_join,
-
-    mock_checkpoints,
-
-    mock_pdf,
-
-):
-
+def test_convert_pdf_yields_progress(mock_pipeline_class, mock_pdf):
     """Conversion should emit intermediate loading statuses."""
-
-    mock_join.side_effect = lambda _dir, path: Path(path).write_text("<score></score>")
-
-    mock_msc_convert.side_effect = lambda xml, mscx, musescore_path=None: Path(
-
-        mscx
-
-    ).write_text("<mscx></mscx>")
-
-
 
     statuses = [step[0] for step in convert_pdf(mock_pdf)]
 
@@ -298,39 +197,9 @@ def test_convert_pdf_missing():
 
 
 
-@patch("pdf2muse.ui.ensure_checkpoints")
-
-@patch("pdf2muse.ui.join_musicxml_files")
-
-@patch("pdf2muse.ui.convert_to_musescore_format")
-
 @patch("pdf2muse.ui.PDF2MusePipeline", side_effect=make_pipeline_mock)
-
-def test_convert_batch_pdfs_success(
-
-    mock_pipeline_class,
-
-    mock_msc_convert,
-
-    mock_join,
-
-    mock_checkpoints,
-
-    mock_pdf,
-
-):
-
+def test_convert_batch_pdfs_success(mock_pipeline_class, mock_pdf):
     """Test successful batch conversion of multiple PDFs in UI."""
-
-    mock_join.side_effect = lambda _dir, path: Path(path).write_text("<score></score>")
-
-    mock_msc_convert.side_effect = lambda xml, mscx, musescore_path=None: Path(
-
-        mscx
-
-    ).write_text("<mscx></mscx>")
-
-
 
     status, zip_path, _skeleton, _btn = _final_result(
 
@@ -376,26 +245,12 @@ def test_convert_batch_pdfs_success(
 
 
 
-@patch("pdf2muse.ui.ensure_checkpoints")
-@patch("pdf2muse.ui.join_musicxml_files")
-@patch("pdf2muse.ui.convert_to_musescore_format")
 @patch("pdf2muse.ui.PDF2MusePipeline", side_effect=make_pipeline_mock)
-def test_convert_batch_pdfs_prefers_gradio_file_path(
-    mock_pipeline_class,
-    mock_msc_convert,
-    mock_join,
-    mock_checkpoints,
-    tmp_path,
-):
+def test_convert_batch_pdfs_prefers_gradio_file_path(mock_pipeline_class, tmp_path):
     """Batch conversion should use Gradio FileData.path when present."""
     pdf = tmp_path / "batch-upload.pdf"
     pdf.write_bytes(b"%PDF-1.4 mock pdf data")
     file_data = SimpleNamespace(path=str(pdf), name="original-batch-name.pdf")
-
-    mock_join.side_effect = lambda _dir, path: Path(path).write_text("<score></score>")
-    mock_msc_convert.side_effect = lambda xml, mscx, musescore_path=None: Path(
-        mscx
-    ).write_text("<mscx></mscx>")
 
     status, zip_path, _skeleton, _btn = _final_result(
         convert_batch_pdfs([file_data])

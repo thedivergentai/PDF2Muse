@@ -150,11 +150,20 @@ Useful options:
 | `-o`, `--output DIR` | Directory for generated files. |
 | `--first-page N` | First PDF page to convert, 1-indexed. Useful for quick checks. |
 | `--last-page N` | Last PDF page to convert, 1-indexed. |
+| `--render-dpi N` | PDF render DPI for OMR input images. Defaults to 300. |
+| `--oemer-timeout N` | Seconds before one page-level `oemer` process is marked failed. |
 | `--no-deskew` | Disable automatic deskewing. |
 | `--use-tf` | Use oemer's TensorFlow path instead of the default CPU ONNX wrapper. |
 | `--save-cache` | Ask oemer to save prediction cache data. |
 | `--musescore-path PATH` | Path to a MuseScore executable for `.mscx` export. |
+| `--model-backend NAME` | OMR backend slot for experiments: `oemer-stock`, reserved `oemer-custom`, or non-runnable `legato-experimental`. |
+| `--checkpoint-dir DIR` | Reserved custom oemer-compatible checkpoint directory option; do not use for model claims until runtime override validation passes. |
 | `--verbose` | Enable detailed logging. |
+
+Each conversion writes `conversion_report.json` beside the outputs. The report
+records page-level OMR status, MusicXML merge status, final MusicXML parse
+status, and optional MuseScore export status. Treat generated notation as a
+draft and review it in notation software before use.
 
 ### Web UI
 
@@ -182,17 +191,45 @@ The evaluation command is intended for developers and maintainers. It compares g
 pdf2muse evaluate evaluation/manifests/smoke.local.example.json --output evaluation/runs/smoke
 ```
 
-This command is part of the quality roadmap. It reports parseability and structural metrics today, with optional `musicdiff`/OMR-NED integration when evaluation dependencies are installed.
+This command is part of the quality roadmap. It reports parseability, optional
+MusicXML library import status, optional MuseScore import status, structural
+metrics, failure categories, and optional `musicdiff`/OMR-NED integration when
+evaluation dependencies are installed.
+
+For a generated local clean-typeset fixture set:
+
+```bash
+venv\Scripts\python.exe scripts\clean_typeset_benchmark.py --sample-count 20 --output-dir datasets\cache\clean-typeset-generated --manifest evaluation\manifests\clean-typeset.local.json
+venv\Scripts\python.exe -m pdf2muse.cli evaluate evaluation\manifests\clean-typeset.local.json --output evaluation\runs\clean-typeset-stock-smoke --limit 1 --no-musicdiff --oemer-timeout 90
+```
+
+The first smoke report is documented in
+`docs/evaluation/clean-typeset-baseline-report.md`. It is a runtime baseline,
+not an accuracy claim: the generated smoke fixture currently times out before
+MusicXML is produced.
+
+A real public-domain Mutopia PDF smoke is documented in
+`docs/evaluation/public-score-smoke-report.md`. With a 300-second page timeout,
+that run produced parseable MusicXML. MuseScore `.mscx` export still requires a
+local MuseScore CLI.
+
+The first OpenScore CC0 ground-truth benchmark attempt is documented in
+`docs/evaluation/openscore-benchmark-report.md`. OpenScore provides suitable
+symbolic ground truth, but this environment still needs MuseScore CLI or another
+trusted renderer to create benchmark-quality PDF inputs.
 
 ### Experimental Degradation Command
 
 The degradation command creates deterministic damaged image variants for OMR experiments. It does not change ground-truth notation; use manifests to keep degraded images linked to their source MusicXML.
 
 ```bash
-pdf2muse degrade datasets/raw/example/images datasets/cache/example-scan-noise --profile scan-noise --seed 123
+pdf2muse degrade datasets/raw/example/images datasets/cache/example-scan-noise --profile scan-noise --severity medium --seed 123
 ```
 
-Available profiles are `scan-noise`, `blur`, `low-contrast`, and `shadow`.
+Available profiles are `scan-noise`, `blur`, `low-contrast`, `shadow`,
+`jpeg-artifacts`, `skew`, and `uneven-lighting`. Severity can be `light`,
+`medium`, or `heavy`. These degraded variants are robustness stress tests, not
+accuracy claims.
 
 ---
 

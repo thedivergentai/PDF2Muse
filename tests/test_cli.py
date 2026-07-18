@@ -16,7 +16,7 @@ def test_help():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "PDF2Muse" in result.stdout
-    assert "Convert PDF sheet music" in result.stdout
+    assert "Generate draft MusicXML" in result.stdout
     for option in ("--output", "--no-deskew", "--use-tf", "--save-cache", "--verbose"):
         assert option in result.stdout
 
@@ -25,6 +25,10 @@ def test_convert_help():
     assert result.exit_code == 0
     assert "PDF_PATH" in result.stdout
     assert "--output" in result.stdout
+    assert "--render-dpi" in result.stdout
+    assert "--oemer-timeout" in result.stdout
+    assert "--model-backend" in result.stdout
+    assert "--checkpoint-dir" in result.stdout
 
 
 def test_evaluate_help():
@@ -33,6 +37,10 @@ def test_evaluate_help():
     assert "MANIFEST" in result.stdout
     assert "--output" in result.stdout
     assert "--no-musicdiff" in result.stdout
+    assert "--musescore-path" in result.stdout
+    assert "--render-dpi" in result.stdout
+    assert "--oemer-timeout" in result.stdout
+    assert "--oemer-device" in result.stdout
 
 
 @patch("pdf2muse.cli.run_evaluation")
@@ -43,7 +51,21 @@ def test_evaluate_delegates_to_runner(mock_run, tmp_path):
 
     result = runner.invoke(
         app,
-        ["evaluate", str(manifest), "--output", str(output), "--limit", "2", "--no-musicdiff"],
+        [
+            "evaluate",
+            str(manifest),
+            "--output",
+            str(output),
+            "--limit",
+            "2",
+            "--render-dpi",
+            "400",
+            "--oemer-timeout",
+            "30",
+            "--oemer-device",
+            "cuda",
+            "--no-musicdiff",
+        ],
     )
 
     assert result.exit_code == 0
@@ -54,6 +76,15 @@ def test_evaluate_delegates_to_runner(mock_run, tmp_path):
         first_page=None,
         last_page=None,
         use_musicdiff=False,
+        musescore_path=None,
+        model_backend="auto",
+        checkpoint_dir=None,
+        render_dpi=400,
+        oemer_timeout_seconds=30,
+        oemer_device="cuda",
+        oemer_quality_profile="quality",
+        allow_untrusted_inputs=False,
+        force=False,
     )
 
 
@@ -63,6 +94,7 @@ def test_degrade_help():
     assert "INPUT_DIR" in result.stdout
     assert "OUTPUT_DIR" in result.stdout
     assert "--profile" in result.stdout
+    assert "--severity" in result.stdout
     assert "--seed" in result.stdout
 
 
@@ -80,6 +112,8 @@ def test_degrade_delegates_to_runner(mock_degrade, tmp_path):
             str(output_dir),
             "--profile",
             "scan-noise",
+            "--severity",
+            "heavy",
             "--seed",
             "42",
         ],
@@ -90,5 +124,6 @@ def test_degrade_delegates_to_runner(mock_degrade, tmp_path):
         input_dir=input_dir,
         output_dir=output_dir,
         profile="scan-noise",
+        severity="heavy",
         seed=42,
     )

@@ -1,0 +1,61 @@
+{
+  "samples": [
+    {
+      "difficulty_tags": [
+        "clean-typeset",
+        "cc0",
+        "voice-piano",
+        "lyrics"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/clean-typeset/openscore-lieder/openscore-lieder-just-for-today/ground_truth.musicxml",
+      "id": "openscore-lieder-just-for-today",
+      "input": "../../datasets/benchmark-sources/clean-typeset/openscore-lieder/openscore-lieder-just-for-today/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-cli",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "OpenScore Lieder GitHub repository is licensed CC0-1.0; PDF and MusicXML were generated locally from the same MXL source.",
+      "source": "OpenScore Lieder"
+    },
+    {
+      "difficulty_tags": [
+        "clean-typeset",
+        "cc0",
+        "voice-piano",
+        "lyrics"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/clean-typeset/openscore-lieder/openscore-lieder-think-of-today/ground_truth.musicxml",
+      "id": "openscore-lieder-think-of-today",
+      "input": "../../datasets/benchmark-sources/clean-typeset/openscore-lieder/openscore-lieder-think-of-today/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-cli",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "OpenScore Lieder GitHub repository is licensed CC0-1.0; PDF and MusicXML were generated locally from the same MXL source.",
+      "source": "OpenScore Lieder"
+    },
+    {
+      "difficulty_tags": [
+        "clean-typeset",
+        "cc0",
+        "voice-piano",
+        "lyrics"
+      ],
+      "first_page": 1,
+      "ground_truth": "../../datasets/benchmark-sources/clean-typeset/openscore-lieder/openscore-lieder-crazy-jane/ground_truth.musicxml",
+      "id": "openscore-lieder-crazy-jane",
+      "input": "../../datasets/benchmark-sources/clean-typeset/openscore-lieder/openscore-lieder-crazy-jane/input.pdf",
+      "input_quality": {
+        "renderer": "musescore-cli",
+        "trusted_for_accuracy": true
+      },
+      "last_page": 1,
+      "license_notes": "OpenScore Lieder GitHub repository is licensed CC0-1.0; PDF and MusicXML were generated locally from the same MXL source.",
+      "source": "OpenScore Lieder"
+    }
+  ]
+}

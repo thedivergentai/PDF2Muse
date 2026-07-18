@@ -1,31 +1,33 @@
 """Gradio web interface for PDF2Muse."""
 
+import json
 import logging
 import os
 import sys
 import tempfile
 import zipfile
 import shutil
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Generator, Iterator, List, Optional, Tuple
+from typing import Callable, Generator, List, Optional, Tuple
 
 import gradio as gr
 from rich.console import Console
 
+from .adapters import adapter_healthchecks
 from .cli import configure_windows_stdio
 from .core import PDF2MusePipeline
-from .musicxml import convert_to_musescore_format, find_musescore_binary, join_musicxml_files
-from .oemer_utils import download_checkpoints, ensure_checkpoints, get_checkpoint_dir
+from .musicxml import find_musescore_binary
+from .oemer_utils import download_checkpoints, get_checkpoint_dir
+from .quality_scorecard import format_quality_scorecard, load_benchmark_summary
 
 configure_windows_stdio()
 
 logger = logging.getLogger(__name__)
 console = Console()
 
-# Type alias for handler return streams (generators yield tuples; early exits return once).
 ConvertSingleYield = Tuple[str, Optional[str], Optional[str], dict, dict]
 ConvertBatchYield = Tuple[str, Optional[str], dict, dict]
+ProgressCallback = Callable[[float, str], None]
 
 _DOWNLOAD_SKELETON_ACTIVE = (
     '<div class="download-skeleton is-active" role="status" aria-live="polite" '
@@ -55,17 +57,110 @@ def _md_loading(title: str, detail: str) -> str:
     )
 
 
-def _md_success(has_mscx: bool) -> str:
+def _md_success(has_mscx: bool, scorecard: str = "") -> str:
+    review_note = (
+        "\n\n**Review required:** OMR output is a draft. Open the MusicXML or "
+        "MuseScore file in notation software and check notes, rhythms, voices, "
+        "and layout before using it."
+    )
+    scorecard_block = f"\n\n{scorecard}" if scorecard else ""
     if has_mscx:
         return (
             "### Conversion complete\n\n"
             "Both **MusicXML** and **MuseScore** files are ready for download below."
+            f"{scorecard_block}{review_note}"
         )
     return (
         "### Conversion complete\n\n"
         "**MusicXML** is ready below. MuseScore was not detected or `.mscx` export was "
         "skipped—you can import the MusicXML into MuseScore or another notation editor."
+        f"{scorecard_block}{review_note}"
     )
+
+
+def _pipeline_kwargs(
+    pdf_path: str,
+    output_dir: str,
+    *,
+    deskew: bool,
+    use_tf: bool,
+    musescore_path: Optional[str],
+    first_page: Optional[int],
+    last_page: Optional[int],
+    render_dpi: int,
+    oemer_device: str,
+    oemer_quality_profile: str,
+    model_backend: str,
+    oemer_retries: bool,
+) -> dict:
+    return {
+        "pdf_path": pdf_path,
+        "output_dir": output_dir,
+        "deskew": deskew,
+        "use_tf": use_tf,
+        "musescore_path": musescore_path,
+        "first_page": first_page,
+        "last_page": last_page,
+        "render_dpi": render_dpi,
+        "oemer_device": oemer_device,
+        "oemer_quality_profile": oemer_quality_profile,
+        "model_backend": model_backend,
+        "oemer_retries": oemer_retries,
+        "quality_report": True,
+    }
+
+
+def _run_pipeline_with_progress(
+    pipeline: PDF2MusePipeline,
+    progress: Optional[gr.Progress],
+    status_builder: Callable[[str], str],
+) -> Generator[str, None, None]:
+    """Run pipeline.run and yield markdown status updates."""
+
+    last_message = ""
+
+    def on_progress(fraction: float, description: str) -> None:
+        nonlocal last_message
+        last_message = description
+        if progress is not None:
+            try:
+                progress(fraction, desc=description)
+            except Exception:
+                pass
+
+    yield status_builder(_md_loading("Preparing", "Starting conversion pipeline…"))
+
+    import threading
+
+    error_holder: list[Exception] = []
+    result_holder: list[Path] = []
+
+    def worker() -> None:
+        try:
+            result_holder.append(pipeline.run(progress_callback=on_progress))
+        except Exception as exc:
+            error_holder.append(exc)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+
+    while thread.is_alive():
+        if last_message:
+            yield status_builder(_md_loading("Running", last_message))
+        thread.join(timeout=0.5)
+
+    if error_holder:
+        raise error_holder[0]
+    if not result_holder:
+        raise RuntimeError("Pipeline did not return a result")
+
+
+def _status_from_report(report: dict) -> str:
+    scorecard = format_quality_scorecard(report)
+    benchmark = load_benchmark_summary()
+    if benchmark:
+        return f"{scorecard}\n\n_Latest multi-tier benchmark:_ {benchmark}"
+    return scorecard
 
 
 def _format_conversion_error(exc: Exception) -> str:
@@ -86,103 +181,6 @@ def _uploaded_file_path(file_obj: object) -> str:
     return str(file_obj)
 
 
-def _orchestrate_pipeline(
-    pipeline: PDF2MusePipeline,
-    output_dir: Path,
-    progress: Optional[gr.Progress] = None,
-) -> Iterator[str]:
-    """
-    Run conversion steps with incremental status messages.
-
-    Yields markdown status strings; caller handles file copying after completion.
-    """
-    def tick(frac: float, desc: str) -> None:
-        if progress is not None:
-            try:
-                progress(frac, desc=desc)
-            except Exception:
-                pass
-
-    tick(0.04, "Preparing")
-    yield _md_loading("Preparing", "Checking OMR model checkpoints…")
-    ensure_checkpoints()
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        image_dir = temp_path / "images"
-        musicxml_dir = temp_path / "musicxml"
-        image_dir.mkdir(parents=True, exist_ok=True)
-        musicxml_dir.mkdir(parents=True, exist_ok=True)
-
-        tick(0.12, "PDF to images")
-        yield _md_loading("Converting PDF", "Rendering pages to images…")
-        png_files = pipeline.pdf_to_png(image_dir)
-        total = len(png_files)
-
-        if total == 0:
-            raise RuntimeError("No pages were rendered from the PDF.")
-
-        tick(0.22, "OMR")
-        yield _md_loading("Running OMR", f"Processing page **0 / {total}**…")
-
-        max_workers = min(4, max(1, (os.cpu_count() or 2) // 2))
-        results: list[Optional[Path]] = [None] * total
-        page_errors: list[str] = []
-        completed = 0
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(
-                    pipeline.process_image_with_oemer, png, musicxml_dir
-                ): (idx, png.name)
-                for idx, png in enumerate(png_files)
-            }
-            for future in as_completed(futures):
-                idx, filename = futures[future]
-                try:
-                    musicxml_file, err = future.result()
-                    if musicxml_file:
-                        results[idx] = musicxml_file
-                    elif err:
-                        page_errors.append(err)
-                except Exception as e:
-                    page_errors.append(f"{filename}: {e}")
-                    logger.error("Error processing page %s: %s", filename, e)
-
-                completed += 1
-                frac = 0.22 + 0.58 * (completed / total)
-                tick(frac, f"OMR {completed}/{total}")
-                yield _md_loading(
-                    "Running OMR",
-                    f"Completed **{completed} / {total}** pages (latest: `{filename}`)…",
-                )
-
-        musicxml_files = [r for r in results if r is not None]
-        if not musicxml_files:
-            detail = "\n".join(page_errors) if page_errors else "Unknown error"
-            raise RuntimeError(f"No MusicXML files were generated.\n{detail}")
-
-        tick(0.84, "Joining MusicXML")
-        yield _md_loading("Joining MusicXML", "Merging per-page results into one score…")
-        combined_musicxml = output_dir / "combined.musicxml"
-        join_musicxml_files(musicxml_dir, combined_musicxml)
-
-        tick(0.93, "MuseScore export")
-        yield _md_loading(
-            "MuseScore export",
-            "Converting to native `.mscx` when MuseScore is available…",
-        )
-        musescore_file = output_dir / "combined.mscx"
-        try:
-            convert_to_musescore_format(
-                combined_musicxml,
-                musescore_file,
-                musescore_path=pipeline.musescore_path,
-            )
-        except Exception as e:
-            logger.warning("MuseScore conversion skipped: %s", e)
-
-
 def convert_pdf(
     pdf_file: gr.File,
     deskew: bool = True,
@@ -190,6 +188,11 @@ def convert_pdf(
     musescore_path: Optional[str] = None,
     first_page: Optional[int] = None,
     last_page: Optional[int] = None,
+    render_dpi: int = 360,
+    oemer_device: str = "auto",
+    oemer_quality_profile: str = "quality",
+    model_backend: str = "auto",
+    peak_quality: bool = False,
     progress: gr.Progress = gr.Progress(track_tqdm=False),
 ) -> Generator[ConvertSingleYield, None, None]:
     """Convert a single PDF to MusicXML and MuseScore format with live progress."""
@@ -207,6 +210,11 @@ def convert_pdf(
     musescore_path = musescore_path.strip() if musescore_path else None
     first_page = int(first_page) if first_page and int(first_page) > 0 else None
     last_page = int(last_page) if last_page and int(last_page) > 0 else None
+    if peak_quality:
+        oemer_quality_profile = "quality"
+        model_backend = "auto"
+        if oemer_device == "cpu":
+            oemer_device = "auto"
 
     yield (
         _md_loading("Preparing", "Starting conversion pipeline…"),
@@ -220,20 +228,26 @@ def convert_pdf(
         with tempfile.TemporaryDirectory() as temp_dir:
             output_dir = Path(temp_dir) / "output"
             output_dir.mkdir(parents=True, exist_ok=True)
-
             pdf_path = _uploaded_file_path(pdf_file)
 
             pipeline = PDF2MusePipeline(
-                pdf_path=pdf_path,
-                output_dir=str(output_dir),
-                deskew=deskew,
-                use_tf=use_tf,
-                musescore_path=musescore_path,
-                first_page=first_page,
-                last_page=last_page,
+                **_pipeline_kwargs(
+                    pdf_path,
+                    str(output_dir),
+                    deskew=deskew,
+                    use_tf=use_tf,
+                    musescore_path=musescore_path,
+                    first_page=first_page,
+                    last_page=last_page,
+                    render_dpi=int(render_dpi),
+                    oemer_device=oemer_device,
+                    oemer_quality_profile=oemer_quality_profile,
+                    model_backend=model_backend,
+                    oemer_retries=True,
+                )
             )
 
-            for status_msg in _orchestrate_pipeline(pipeline, output_dir, progress):
+            for status_msg in _run_pipeline_with_progress(pipeline, progress, lambda s: s):
                 yield (
                     status_msg,
                     None,
@@ -260,8 +274,9 @@ def convert_pdf(
                 mscx_dest = str(dest)
 
             progress(1.0, desc="Complete")
+            scorecard = _status_from_report(pipeline.conversion_report)
             yield (
-                _md_success(mscx_dest is not None),
+                _md_success(mscx_dest is not None, scorecard),
                 xml_dest,
                 mscx_dest,
                 _DOWNLOAD_SKELETON_IDLE,
@@ -297,6 +312,10 @@ def convert_batch_pdfs(
     musescore_path: Optional[str] = None,
     first_page: Optional[int] = None,
     last_page: Optional[int] = None,
+    render_dpi: int = 360,
+    oemer_device: str = "auto",
+    oemer_quality_profile: str = "quality",
+    model_backend: str = "auto",
     progress: gr.Progress = gr.Progress(track_tqdm=False),
 ) -> Generator[ConvertBatchYield, None, None]:
     """Convert multiple PDFs in batch with live progress; returns a ZIP of outputs."""
@@ -351,18 +370,30 @@ def convert_batch_pdfs(
                 output_dir.mkdir(parents=True, exist_ok=True)
 
                 pipeline = PDF2MusePipeline(
-                    pdf_path=pdf_path,
-                    output_dir=str(output_dir),
-                    deskew=deskew,
-                    use_tf=use_tf,
-                    musescore_path=musescore_path,
-                    first_page=first_page,
-                    last_page=last_page,
+                    **_pipeline_kwargs(
+                        pdf_path,
+                        str(output_dir),
+                        deskew=deskew,
+                        use_tf=use_tf,
+                        musescore_path=musescore_path,
+                        first_page=first_page,
+                        last_page=last_page,
+                        render_dpi=int(render_dpi),
+                        oemer_device=oemer_device,
+                        oemer_quality_profile=oemer_quality_profile,
+                        model_backend=model_backend,
+                        oemer_retries=True,
+                    )
                 )
 
-                for step_status in _orchestrate_pipeline(pipeline, output_dir, progress):
+                def _batch_status(message: str) -> str:
+                    return log_output + message
+
+                for step_status in _run_pipeline_with_progress(
+                    pipeline, progress, _batch_status
+                ):
                     yield (
-                        log_output + step_status,
+                        step_status,
                         None,
                         _DOWNLOAD_SKELETON_ACTIVE,
                         _btn_busy(),
@@ -487,10 +518,16 @@ def run_diagnostics(musescore_custom: Optional[str] = None) -> str:
         providers = ort.get_available_providers()
         report += (
             f"- **ONNX Runtime Engine:** `v{ort.__version__}` "
-            f"(Available Acceleration: `{providers}`)\n"
+            f"(Available Acceleration: `{providers}`)\n\n"
         )
     except ImportError:
-        report += "- **ONNX Runtime Engine:** *Not loaded / standard module*\n"
+        report += "- **ONNX Runtime Engine:** *Not loaded / standard module*\n\n"
+
+    report += "### OMR backend readiness\n\n"
+    for status in adapter_healthchecks():
+        flag = "**[READY]**" if status.available else "**[UNAVAILABLE]**"
+        report += f"- **{status.name}:** {flag} — {status.message}\n"
+    report += "\n*Diagnostics confirm environment setup, not transcription accuracy.*\n"
 
     return report
 
@@ -854,6 +891,40 @@ def create_interface(
                                         value=False,
                                         info="ONNX Runtime is the default",
                                     )
+                                peak_quality_checkbox = gr.Checkbox(
+                                    label="Peak recognition quality",
+                                    value=False,
+                                    info="Quality profile + auto backend cascade (GPU Legato when available)",
+                                )
+                                with gr.Row():
+                                    render_dpi_input = gr.Number(
+                                        label="Render DPI",
+                                        value=300,
+                                        precision=0,
+                                        info="PDF render resolution for OMR",
+                                    )
+                                    quality_profile_input = gr.Dropdown(
+                                        label="OMR quality profile",
+                                        choices=["fast", "balanced", "quality"],
+                                        value="quality",
+                                    )
+                                with gr.Row():
+                                    device_input = gr.Dropdown(
+                                        label="OMR device",
+                                        choices=["auto", "cpu", "cuda"],
+                                        value="auto",
+                                        info="auto uses CUDA when onnxruntime-gpu CUDA EP is available",
+                                    )
+                                    backend_input = gr.Dropdown(
+                                        label="Model backend",
+                                        choices=[
+                                            "auto",
+                                            "oemer-stock",
+                                            "oemer-custom",
+                                            "legato-experimental",
+                                        ],
+                                        value="auto",
+                                    )
 
                             convert_button = gr.Button(
                                 "Recognize & Convert Sheet Music",
@@ -995,9 +1066,10 @@ def create_interface(
                     gr.HTML(
                         """
                         <div class="tip-card">
-                            <h3>Peak recognition quality</h3>
-                            <p>For higher OMR accuracy:</p>
+                            <h3>Higher OMR accuracy</h3>
+                            <p>For the best chance of usable results:</p>
                             <ul>
+                                <li>Enable <strong>Peak recognition quality</strong> when you have a GPU.</li>
                                 <li>Scan at 300 DPI or higher with strong contrast.</li>
                                 <li>Avoid handwritten, tab-only, or chord-chart layouts.</li>
                                 <li>Use even lighting without shadows or skew.</li>
@@ -1015,6 +1087,11 @@ def create_interface(
                 musescore_input,
                 first_page_input,
                 last_page_input,
+                render_dpi_input,
+                device_input,
+                quality_profile_input,
+                backend_input,
+                peak_quality_checkbox,
             ],
             outputs=[
                 status_output,

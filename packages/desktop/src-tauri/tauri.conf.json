@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PDF2Muse",
+  "version": "0.1.0",
+  "identifier": "com.divergentai.pdf2muse",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "PDF2Muse",
+        "width": 1200,
+        "height": 800
+      }
+    ]
+  }
+}

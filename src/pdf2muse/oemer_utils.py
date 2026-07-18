@@ -1,23 +1,67 @@
 """Utilities for working with oemer optical music recognition."""
 
 import logging
+import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional, Union
 
 import requests
 from rich.console import Console
 
 logger = logging.getLogger(__name__)
 console = Console()
+OEMER_CHECKPOINT_ENV = "PDF2MUSE_OEMER_CHECKPOINT_DIR"
 
 
-def get_checkpoint_dir() -> Path:
+def cuda_ep_available() -> bool:
+    """Return True when onnxruntime exposes CUDAExecutionProvider."""
+
+    try:
+        import onnxruntime as ort
+
+        return "CUDAExecutionProvider" in ort.get_available_providers()
+    except ImportError:
+        return False
+
+
+def resolve_oemer_device(device: str = "auto") -> str:
+    """Resolve oemer device: auto → cuda when CUDA EP exists, else cpu."""
+
+    normalized = (device or "auto").strip().lower()
+    if normalized in {"cpu", "cuda"}:
+        return normalized
+    if normalized == "auto":
+        return "cuda" if cuda_ep_available() else "cpu"
+    raise ValueError("oemer_device must be 'auto', 'cpu', or 'cuda'")
+
+
+@dataclass(frozen=True)
+class ModelBackendConfig:
+    """Configuration for one OMR backend experiment."""
+
+    name: str
+    kind: str
+    description: str
+    checkpoint_dir: Optional[Path] = None
+    experimental: bool = False
+
+
+def get_checkpoint_dir(checkpoint_dir: Optional[Union[Path, str]] = None) -> Path:
     """
     Get the directory where oemer checkpoints should be stored.
 
     Returns:
         Path to the checkpoints directory
     """
+    if checkpoint_dir:
+        return Path(checkpoint_dir).resolve()
+
+    env_checkpoint_dir = os.environ.get(OEMER_CHECKPOINT_ENV)
+    if env_checkpoint_dir:
+        return Path(env_checkpoint_dir).resolve()
+
     try:
         import oemer
         oemer_path = Path(oemer.__file__).parent
@@ -37,7 +81,10 @@ def get_checkpoint_dir() -> Path:
         return site_packages / "oemer" / "checkpoints"
 
 
-def download_checkpoints(force: bool = False) -> None:
+def download_checkpoints(
+    force: bool = False,
+    checkpoint_dir: Optional[Union[Path, str]] = None,
+) -> None:
     """
     Download oemer model checkpoints if they don't exist.
 
@@ -56,7 +103,7 @@ def download_checkpoints(force: bool = False) -> None:
         },
     }
 
-    checkpoint_dir = get_checkpoint_dir()
+    checkpoint_dir = get_checkpoint_dir(checkpoint_dir)
     logger.info(f"Checkpoint directory: {checkpoint_dir}")
 
     for checkpoint_name, files in checkpoint_files.items():
@@ -104,11 +151,15 @@ def download_checkpoints(force: bool = False) -> None:
     console.print("[green][OK][/green] All checkpoints ready")
 
 
-def ensure_checkpoints() -> None:
+def ensure_checkpoints(
+    checkpoint_dir: Optional[Union[Path, str]] = None,
+    *,
+    download_missing: bool = True,
+) -> None:
     """
     Ensure oemer checkpoints are available, downloading if necessary.
     """
-    checkpoint_dir = get_checkpoint_dir()
+    checkpoint_dir = get_checkpoint_dir(checkpoint_dir)
     
     # Check if critical files exist with their correct internal names
     critical_files = [
@@ -122,5 +173,67 @@ def ensure_checkpoints() -> None:
         logger.debug("All checkpoints present")
         return
 
+    if not download_missing:
+        missing = ", ".join(str(path) for path in critical_files if not path.exists())
+        raise FileNotFoundError(f"Custom checkpoint directory is incomplete: {missing}")
+
     logger.info("Checkpoints missing, downloading...")
-    download_checkpoints()
+    download_checkpoints(checkpoint_dir=checkpoint_dir)
+
+
+def list_model_backend_configs() -> list[ModelBackendConfig]:
+    """Return the supported OMR backend experiment slots."""
+
+    return [
+        ModelBackendConfig(
+            name="oemer-stock",
+            kind="oemer",
+            description="Stock oemer checkpoints installed with or downloaded for the package.",
+            checkpoint_dir=None,
+            experimental=False,
+        ),
+        ModelBackendConfig(
+            name="oemer-custom",
+            kind="oemer",
+            description=(
+                "Custom oemer-compatible checkpoints in a separate directory; useful for "
+                "fine-tuning experiments without overwriting package checkpoints."
+            ),
+            experimental=True,
+        ),
+        ModelBackendConfig(
+            name="legato-experimental",
+            kind="adapter",
+            description=(
+                "Legato VLM end-to-end OMR (GPU). Run scripts/legato_setup.py or set "
+                "PDF2MUSE_LEGATO_REPO / PDF2MUSE_LEGATO_PYTHON / PDF2MUSE_LEGATO_MODEL."
+            ),
+            experimental=True,
+        ),
+    ]
+
+
+def get_model_backend_config(
+    name: str = "oemer-stock",
+    *,
+    checkpoint_dir: Optional[Union[Path, str]] = None,
+) -> ModelBackendConfig:
+    """Return a backend config, applying checkpoint overrides for custom oemer runs."""
+
+    configs = {config.name: config for config in list_model_backend_configs()}
+    if name not in configs:
+        expected = ", ".join(sorted(configs))
+        raise ValueError(f"Unknown model backend: {name}. Expected one of: {expected}.")
+
+    config = configs[name]
+    if name == "oemer-custom":
+        return ModelBackendConfig(
+            name=config.name,
+            kind=config.kind,
+            description=config.description,
+            checkpoint_dir=get_checkpoint_dir(checkpoint_dir) if checkpoint_dir else None,
+            experimental=config.experimental,
+        )
+    if checkpoint_dir and name == "oemer-stock":
+        return get_model_backend_config("oemer-custom", checkpoint_dir=checkpoint_dir)
+    return config
