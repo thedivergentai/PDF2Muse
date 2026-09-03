@@ -210,6 +210,17 @@ def list_model_backend_configs() -> list[ModelBackendConfig]:
             ),
             experimental=True,
         ),
+        ModelBackendConfig(
+            name="homr",
+            kind="homr",
+            description=(
+                "Optional HOMR end-to-end OMR (AGPL-3.0). Install with "
+                "pip install 'pdf2muse[homr]' (requires Python >= 3.11), then "
+                "pdf2muse convert score.pdf --model-backend homr. "
+                "Set PDF2MUSE_ALLOW_HOMR_AUTO=1 to select HOMR under --model-backend auto."
+            ),
+            experimental=False,
+        ),
     ]
 
 

@@ -18,6 +18,10 @@ model is treated as a product improvement.
   produces ABC or another intermediate format and converts it to MusicXML for
   the same report pipeline. It is listed for planning, but conversion fails
   explicitly until an adapter is implemented.
+- `homr`: optional [HOMR](https://github.com/liebharc/homr) backend via
+  `pip install 'pdf2muse[homr]'` (AGPL-3.0, Python >= 3.11). Use
+  `--model-backend homr`. Not selected by `auto` unless
+  `PDF2MUSE_ALLOW_HOMR_AUTO=1`.
 
 Planned custom-checkpoint evaluation, after runtime override validation:
 

@@ -22,8 +22,17 @@ def test_create_legato_adapter():
     assert isinstance(adapter, LegatoAdapter)
 
 
+def test_create_homr_adapter():
+    from pdf2muse.adapters import HomrAdapter
+
+    backend = get_model_backend_config("homr")
+    adapter = create_adapter(backend)
+    assert isinstance(adapter, HomrAdapter)
+
+
 def test_resolve_auto_backend_defaults_to_oemer(monkeypatch):
     monkeypatch.delenv("PDF2MUSE_ALLOW_LEGATO_AUTO", raising=False)
+    monkeypatch.delenv("PDF2MUSE_ALLOW_HOMR_AUTO", raising=False)
     assert resolve_auto_backend() == "oemer-stock"
 
 

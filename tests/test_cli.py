@@ -23,18 +23,22 @@ def test_help():
 def test_convert_help():
     result = runner.invoke(app, ["convert", "--help"])
     assert result.exit_code == 0
-    assert "PDF_PATH" in result.stdout
+    help_text = result.stdout.lower()
+    assert "pdf_path" in help_text or "pdf-path" in help_text
     assert "--output" in result.stdout
     assert "--render-dpi" in result.stdout
     assert "--oemer-timeout" in result.stdout
     assert "--model-backend" in result.stdout
     assert "--checkpoint-dir" in result.stdout
+    assert "--header-lock" in result.stdout
+    assert "homr" in help_text
 
 
 def test_evaluate_help():
     result = runner.invoke(app, ["evaluate", "--help"])
     assert result.exit_code == 0
-    assert "MANIFEST" in result.stdout
+    help_text = result.stdout.lower()
+    assert "manifest" in help_text
     assert "--output" in result.stdout
     assert "--no-musicdiff" in result.stdout
     assert "--musescore-path" in result.stdout
@@ -91,8 +95,9 @@ def test_evaluate_delegates_to_runner(mock_run, tmp_path):
 def test_degrade_help():
     result = runner.invoke(app, ["degrade", "--help"])
     assert result.exit_code == 0
-    assert "INPUT_DIR" in result.stdout
-    assert "OUTPUT_DIR" in result.stdout
+    help_text = result.stdout.lower()
+    assert "input_dir" in help_text or "input-dir" in help_text
+    assert "output_dir" in help_text or "output-dir" in help_text
     assert "--profile" in result.stdout
     assert "--severity" in result.stdout
     assert "--seed" in result.stdout

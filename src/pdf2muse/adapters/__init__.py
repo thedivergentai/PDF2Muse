@@ -1,6 +1,7 @@
 """Adapter package for pluggable OMR backends."""
 
 from .base import AdapterStatus, OmrAdapter, OmrOptions, PageResult
+from .homr import HomrAdapter
 from .legato import LegatoAdapter
 from .oemer import OemerAdapter
 from .registry import (
@@ -12,6 +13,7 @@ from .registry import (
 
 __all__ = [
     "AdapterStatus",
+    "HomrAdapter",
     "LegatoAdapter",
     "OemerAdapter",
     "OmrAdapter",

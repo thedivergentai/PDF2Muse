@@ -25,3 +25,12 @@ def test_create_job_rejects_missing_pdf(client, tmp_path):
         json={"pdf_path": str(tmp_path / "missing.pdf")},
     )
     assert response.status_code == 400
+
+
+def test_convert_request_accepts_header_lock_field():
+    from pdf2muse.api import ConvertRequest
+
+    req = ConvertRequest(pdf_path="/tmp/x.pdf", header_lock=True)
+    assert req.header_lock is True
+    req_default = ConvertRequest(pdf_path="/tmp/x.pdf")
+    assert req_default.header_lock is False

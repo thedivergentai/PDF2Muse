@@ -104,6 +104,14 @@ pip install pdf2muse
 pip install "pdf2muse[ui]"
 ```
 
+### Install With Optional HOMR Backend
+
+Requires Python 3.11+. HOMR is AGPL-3.0 and is not pulled in by the default install:
+
+```bash
+pip install "pdf2muse[homr]"
+```
+
 ### Developer Install
 
 ```bash
@@ -156,7 +164,8 @@ Useful options:
 | `--use-tf` | Use oemer's TensorFlow path instead of the default CPU ONNX wrapper. |
 | `--save-cache` | Ask oemer to save prediction cache data. |
 | `--musescore-path PATH` | Path to a MuseScore executable for `.mscx` export. |
-| `--model-backend NAME` | OMR backend slot for experiments: `oemer-stock`, reserved `oemer-custom`, or non-runnable `legato-experimental`. |
+| `--model-backend NAME` | OMR backend: `oemer-stock` (default via `auto`), `oemer-custom`, `homr`, or `legato-experimental`. |
+| `--header-lock` | Force a single key/time/tempo across the score. Default preserves mid-score changes (jazz modulations, meter changes, tempo shifts). |
 | `--checkpoint-dir DIR` | Reserved custom oemer-compatible checkpoint directory option; do not use for model claims until runtime override validation passes. |
 | `--verbose` | Enable detailed logging. |
 
@@ -164,6 +173,17 @@ Each conversion writes `conversion_report.json` beside the outputs. The report
 records page-level OMR status, MusicXML merge status, final MusicXML parse
 status, and optional MuseScore export status. Treat generated notation as a
 draft and review it in notation software before use.
+
+#### Optional HOMR backend
+
+[oemer](https://github.com/BreezeWhite/oemer) has seen little maintenance; [HOMR](https://github.com/liebharc/homr) is a more actively updated end-to-end OMR option. HOMR is **not** installed by default (AGPL-3.0 license; requires Python >= 3.11):
+
+```bash
+pip install 'pdf2muse[homr]'
+pdf2muse convert path/to/sheet_music.pdf --model-backend homr
+```
+
+CUDA users can install GPU extras in the same environment with `pip install 'homr[cuda]'`. Set `PDF2MUSE_ALLOW_HOMR_AUTO=1` if you want `--model-backend auto` to prefer HOMR when it is available. PDF2Muse still joins multi-page MusicXML itself; it does not use HOMR's multi-image merge path.
 
 ### Web UI
 
@@ -299,10 +319,11 @@ The preferred metric direction is parseability first, then `musicdiff`/OMR-NED w
 flowchart TD
     inputPdf[Input PDF] --> renderPdf[pypdfium2 PDF Renderer]
     renderPdf --> pageImages[Page PNG Images]
-    pageImages --> oemerEngine[oemer OMR Engine]
-    oemerEngine --> pageXml[Page MusicXML Files]
+    pageImages --> omrAdapter[OMR adapter oemer / HOMR / Legato]
+    omrAdapter --> pageXml[Page MusicXML Files]
     pageXml --> joinXml[join_musicxml_files]
-    joinXml --> combinedXml[combined.musicxml]
+    joinXml --> headerNorm[header normalize preserve default]
+    headerNorm --> combinedXml[combined.musicxml]
     combinedXml --> museScore[MuseScore CLI Optional]
     museScore --> mscx[combined.mscx]
     combinedXml --> primaryXml[Primary MusicXML Output]
@@ -314,13 +335,17 @@ Package layout:
 PDF2Muse/
 ├── src/pdf2muse/
 │   ├── __init__.py
+│   ├── adapters/
 │   ├── cli.py
 │   ├── core.py
 │   ├── degrade.py
 │   ├── evaluation.py
+│   ├── header_lock.py
 │   ├── musicxml.py
 │   ├── oemer_utils.py
 │   └── ui.py
+├── scripts/
+│   └── homr_convert_wrapper.py
 ├── tests/
 ├── docs/
 ├── evaluation/

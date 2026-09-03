@@ -921,6 +921,7 @@ def create_interface(
                                             "auto",
                                             "oemer-stock",
                                             "oemer-custom",
+                                            "homr",
                                             "legato-experimental",
                                         ],
                                         value="auto",

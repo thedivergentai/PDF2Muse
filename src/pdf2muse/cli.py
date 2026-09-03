@@ -174,10 +174,20 @@ def convert(
         "--quality-report/--no-quality-report",
         help="Write structural MusicXML quality metrics to the conversion report",
     ),
+    header_lock: bool = typer.Option(
+        False,
+        "--header-lock",
+        help=(
+            "Force a single key/time/tempo across the score "
+            "(OMR cleanup for simple scores; default preserves mid-score changes)"
+        ),
+    ),
     model_backend: str = typer.Option(
         "auto",
         "--model-backend",
-        help="OMR backend: auto, oemer-stock, oemer-custom, or legato-experimental",
+        help=(
+            "OMR backend: auto, oemer-stock, oemer-custom, homr, or legato-experimental"
+        ),
     ),
     checkpoint_dir: Optional[Path] = typer.Option(
         None,
@@ -219,6 +229,7 @@ def convert(
             oemer_retries=oemer_retries,
             keep_page_artifacts=keep_page_artifacts,
             quality_report=quality_report,
+            header_lock_mode="lock" if header_lock else "preserve",
             model_backend=model_backend,
             checkpoint_dir=str(checkpoint_dir) if checkpoint_dir else None,
         )
@@ -296,7 +307,7 @@ def evaluate(
     model_backend: str = typer.Option(
         "auto",
         "--model-backend",
-        help="OMR backend: auto, oemer-stock, oemer-custom, or legato-experimental",
+        help="OMR backend: auto, oemer-stock, oemer-custom, homr, or legato-experimental",
     ),
     checkpoint_dir: Optional[Path] = typer.Option(
         None,

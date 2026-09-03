@@ -10,6 +10,7 @@ from typing import Optional, Union
 from ..legato_env import load_legato_env_defaults
 from ..oemer_utils import ModelBackendConfig, get_model_backend_config
 from .base import AdapterStatus, OmrAdapter
+from .homr import HomrAdapter
 from .legato import LegatoAdapter
 from .oemer import OemerAdapter
 
@@ -29,6 +30,10 @@ def resolve_auto_backend(
     if allow_legato and legato.healthcheck().available:
         logger.info("Auto backend selected: legato-experimental")
         return "legato-experimental"
+    allow_homr = os.environ.get("PDF2MUSE_ALLOW_HOMR_AUTO") == "1"
+    if allow_homr and HomrAdapter().healthcheck().available:
+        logger.info("Auto backend selected: homr")
+        return "homr"
     if checkpoint_dir:
         return "oemer-custom"
     logger.info("Auto backend selected: oemer-stock")
@@ -45,6 +50,8 @@ def create_adapter(
 ) -> OmrAdapter:
     """Instantiate the adapter for a model backend configuration."""
 
+    if backend.name == "homr" or backend.kind == "homr":
+        return HomrAdapter()
     if backend.name == "legato-experimental" or backend.kind == "adapter":
         return LegatoAdapter()
     return OemerAdapter(
@@ -60,6 +67,7 @@ def adapter_healthchecks() -> list[AdapterStatus]:
 
     return [
         OemerAdapter().healthcheck(),
+        HomrAdapter().healthcheck(),
         LegatoAdapter().healthcheck(),
     ]
 
