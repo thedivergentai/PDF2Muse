@@ -407,7 +407,7 @@ def test_create_interface():
 
     assert interface.css is not None
 
-    assert "--color-primary: #EA580C" in interface.css
+    assert "--color-primary: #2F6F5E" in interface.css
 
     serialized = interface.get_config_file()
     blob = str(serialized).lower()
