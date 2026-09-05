@@ -149,8 +149,9 @@ class HomrAdapter:
             str(work_image),
             "--device",
             self._device_flag(options),
-            "--no-title",
         ]
+        if options.save_cache:
+            cmd.append("--cache")
         try:
             completed = subprocess.run(
                 cmd,
@@ -200,6 +201,8 @@ class HomrAdapter:
                         "attempt": "homr",
                         "status": "succeeded",
                         "musicxml": str(musicxml_path),
+                        "title_detection": True,
+                        "device": self._device_flag(options),
                         "structure": {
                             "parts": structure.parts,
                             "measures": structure.measures,

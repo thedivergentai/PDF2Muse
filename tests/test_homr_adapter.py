@@ -237,6 +237,37 @@ def test_pipeline_homr_skips_oemer_checkpoints(tmp_path, monkeypatch):
     ensure.assert_not_called()
 
 
+def test_homr_wrapper_omits_no_title_by_default(tmp_path, monkeypatch):
+    adapter = HomrAdapter()
+    image = tmp_path / "page.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    captured = {}
+
+    monkeypatch.setattr(
+        HomrAdapter,
+        "healthcheck",
+        lambda self: type(
+            "S",
+            (),
+            {"available": True, "message": "ok", "name": "homr", "requires_gpu": False},
+        )(),
+    )
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = [str(c) for c in cmd]
+        work_image = Path(cmd[2])
+        produced = work_image.with_suffix(".musicxml")
+        produced.write_text(MINIMAL_MUSICXML, encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout=str(produced) + "\n", stderr="")
+
+    monkeypatch.setattr("pdf2muse.adapters.homr.subprocess.run", fake_run)
+    adapter.recognize_page(image, output_dir, OmrOptions(save_cache=True, timeout_seconds=30))
+    assert "--no-title" not in captured["cmd"]
+    assert "--cache" in captured["cmd"]
+
+
 def test_cli_help_mentions_homr():
     from typer.testing import CliRunner
 

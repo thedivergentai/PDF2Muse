@@ -92,6 +92,7 @@ def _pipeline_kwargs(
     oemer_quality_profile: str,
     model_backend: str,
     oemer_retries: bool,
+    header_lock: bool = False,
 ) -> dict:
     return {
         "pdf_path": pdf_path,
@@ -107,6 +108,7 @@ def _pipeline_kwargs(
         "model_backend": model_backend,
         "oemer_retries": oemer_retries,
         "quality_report": True,
+        "header_lock_mode": "lock" if header_lock else "preserve",
     }
 
 
@@ -193,6 +195,7 @@ def convert_pdf(
     oemer_quality_profile: str = "quality",
     model_backend: str = "auto",
     peak_quality: bool = False,
+    header_lock: bool = False,
     progress: gr.Progress = gr.Progress(track_tqdm=False),
 ) -> Generator[ConvertSingleYield, None, None]:
     """Convert a single PDF to MusicXML and MuseScore format with live progress."""
@@ -212,7 +215,6 @@ def convert_pdf(
     last_page = int(last_page) if last_page and int(last_page) > 0 else None
     if peak_quality:
         oemer_quality_profile = "quality"
-        model_backend = "auto"
         if oemer_device == "cpu":
             oemer_device = "auto"
 
@@ -244,6 +246,7 @@ def convert_pdf(
                     oemer_quality_profile=oemer_quality_profile,
                     model_backend=model_backend,
                     oemer_retries=True,
+                    header_lock=header_lock,
                 )
             )
 
@@ -316,6 +319,7 @@ def convert_batch_pdfs(
     oemer_device: str = "auto",
     oemer_quality_profile: str = "quality",
     model_backend: str = "auto",
+    header_lock: bool = False,
     progress: gr.Progress = gr.Progress(track_tqdm=False),
 ) -> Generator[ConvertBatchYield, None, None]:
     """Convert multiple PDFs in batch with live progress; returns a ZIP of outputs."""
@@ -383,6 +387,7 @@ def convert_batch_pdfs(
                         oemer_quality_profile=oemer_quality_profile,
                         model_backend=model_backend,
                         oemer_retries=True,
+                        header_lock=header_lock,
                     )
                 )
 
@@ -894,7 +899,15 @@ def create_interface(
                                 peak_quality_checkbox = gr.Checkbox(
                                     label="Peak recognition quality",
                                     value=False,
-                                    info="Quality profile + auto backend cascade (GPU Legato when available)",
+                                    info="Forces the quality OMR profile and prefers GPU when device is CPU",
+                                )
+                                header_lock_checkbox = gr.Checkbox(
+                                    label="Lock key / time / tempo across the score",
+                                    value=False,
+                                    info=(
+                                        "Off (default): keep mid-score key, meter, and tempo changes. "
+                                        "On: majority-vote a single header (simple-score OMR cleanup)."
+                                    ),
                                 )
                                 with gr.Row():
                                     render_dpi_input = gr.Number(
@@ -907,13 +920,14 @@ def create_interface(
                                         label="OMR quality profile",
                                         choices=["fast", "balanced", "quality"],
                                         value="quality",
+                                        info="Used by oemer; HOMR ignores this and uses its own pipeline",
                                     )
                                 with gr.Row():
                                     device_input = gr.Dropdown(
                                         label="OMR device",
                                         choices=["auto", "cpu", "cuda"],
                                         value="auto",
-                                        info="auto uses CUDA when onnxruntime-gpu CUDA EP is available",
+                                        info="auto uses CUDA when available (oemer and HOMR)",
                                     )
                                     backend_input = gr.Dropdown(
                                         label="Model backend",
@@ -925,6 +939,10 @@ def create_interface(
                                             "legato-experimental",
                                         ],
                                         value="auto",
+                                        info=(
+                                            "homr requires pip install 'pdf2muse[homr]' "
+                                            "(AGPL-3.0, Python ≥ 3.11)"
+                                        ),
                                     )
 
                             convert_button = gr.Button(
@@ -988,10 +1006,43 @@ def create_interface(
                                     label="Use TensorFlow",
                                     value=False,
                                 )
+                                batch_header_lock = gr.Checkbox(
+                                    label="Lock key / time / tempo across the score",
+                                    value=False,
+                                )
                                 batch_musescore_input = gr.Textbox(
                                     label="MuseScore Executable Path",
                                     value=default_musescore or "",
                                 )
+                                with gr.Row():
+                                    batch_render_dpi = gr.Number(
+                                        label="Render DPI",
+                                        value=300,
+                                        precision=0,
+                                    )
+                                    batch_quality_profile = gr.Dropdown(
+                                        label="OMR quality profile",
+                                        choices=["fast", "balanced", "quality"],
+                                        value="quality",
+                                    )
+                                with gr.Row():
+                                    batch_device = gr.Dropdown(
+                                        label="OMR device",
+                                        choices=["auto", "cpu", "cuda"],
+                                        value="auto",
+                                    )
+                                    batch_backend = gr.Dropdown(
+                                        label="Model backend",
+                                        choices=[
+                                            "auto",
+                                            "oemer-stock",
+                                            "oemer-custom",
+                                            "homr",
+                                            "legato-experimental",
+                                        ],
+                                        value="auto",
+                                        info="homr requires pip install 'pdf2muse[homr]'",
+                                    )
 
                             batch_button = gr.Button(
                                 "Convert Batch Scores (Outputs Zipped)",
@@ -1058,6 +1109,7 @@ def create_interface(
                             <p>PDF2Muse uses these components for best results:</p>
                             <ul>
                                 <li><strong>PDF rendering</strong>: Built-in via pypdfium2 (no Poppler).</li>
+                                <li><strong>HOMR</strong>: Optional OMR engine (AGPL). Install <code>pdf2muse[homr]</code>, then choose backend <code>homr</code>.</li>
                                 <li><strong>MuseScore</strong>: Optional; exports native `.mscx` from MusicXML.</li>
                             </ul>
                         </div>
@@ -1093,6 +1145,7 @@ def create_interface(
                 quality_profile_input,
                 backend_input,
                 peak_quality_checkbox,
+                header_lock_checkbox,
             ],
             outputs=[
                 status_output,
@@ -1113,6 +1166,11 @@ def create_interface(
                 batch_musescore_input,
                 batch_first_page,
                 batch_last_page,
+                batch_render_dpi,
+                batch_device,
+                batch_quality_profile,
+                batch_backend,
+                batch_header_lock,
             ],
             outputs=[
                 batch_status,

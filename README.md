@@ -183,7 +183,11 @@ pip install 'pdf2muse[homr]'
 pdf2muse convert path/to/sheet_music.pdf --model-backend homr
 ```
 
-CUDA users can install GPU extras in the same environment with `pip install 'homr[cuda]'`. Set `PDF2MUSE_ALLOW_HOMR_AUTO=1` if you want `--model-backend auto` to prefer HOMR when it is available. PDF2Muse still joins multi-page MusicXML itself; it does not use HOMR's multi-image merge path.
+In the Web UI, choose **Model backend → `homr`**. CUDA users can install GPU extras with `pip install 'homr[cuda]'`. Set `PDF2MUSE_ALLOW_HOMR_AUTO=1` if you want `--model-backend auto` to prefer HOMR when it is available.
+
+PDF2Muse still joins multi-page MusicXML itself. The helper [`scripts/homr_convert_wrapper.py`](scripts/homr_convert_wrapper.py) calls HOMR's per-image `process_image` API so HOMR's multi-file merge (which deletes per-page XML) is not used.
+
+Credit: HOMR is developed by [Christian Liebhardt / liebharc](https://github.com/liebharc/homr). HOMR itself builds on [oemer](https://github.com/BreezeWhite/oemer) segmentation and [Polyphonic-TrOMR](https://github.com/NetEase/Polyphonic-TrOMR). Using HOMR with PDF2Muse is subject to HOMR's AGPL-3.0 terms.
 
 ### Web UI
 
@@ -402,7 +406,11 @@ Installation success and notation quality are separate concerns. The current `oe
 
 ## Acknowledgements
 
-PDF2Muse builds on the open-source [`oemer`](https://github.com/BreezeWhite/oemer) project and the broader Optical Music Recognition research community.
+PDF2Muse builds on the open-source OMR community:
+
+- [`oemer`](https://github.com/BreezeWhite/oemer) — default page-level OMR engine
+- [`homr`](https://github.com/liebharc/homr) by Christian Liebhardt — optional end-to-end OMR backend (AGPL-3.0). PDF2Muse wraps it via [`scripts/homr_convert_wrapper.py`](scripts/homr_convert_wrapper.py). HOMR credits [oemer](https://github.com/BreezeWhite/oemer) segmentation and [Polyphonic-TrOMR](https://github.com/NetEase/Polyphonic-TrOMR); please cite those projects if you use HOMR in research.
+- MuseScore — optional `.mscx` export via its CLI
 
 ---
 
