@@ -29,6 +29,7 @@ def test_convert_help():
     assert "--oemer-timeout" in result.stdout
     assert "--model-backend" in result.stdout
     assert "--checkpoint-dir" in result.stdout
+    assert "--preview" in result.stdout
 
 
 def test_evaluate_help():

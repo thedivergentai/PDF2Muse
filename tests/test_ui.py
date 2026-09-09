@@ -30,6 +30,8 @@ from pdf2muse.ui import (
 
     create_interface,
 
+    _uploaded_file_path,
+
 )
 
 
@@ -37,16 +39,16 @@ from pdf2muse.ui import (
 
 
 def _final_result(gen):
-
     """Consume a generator handler and return its last yielded tuple."""
-
     result = None
-
     for result in gen:
-
         pass
-
     return result
+
+
+def _unpack_single(result):
+    status, xml_path, mscx_path, skeleton, btn = result[:5]
+    return status, xml_path, mscx_path, skeleton, btn
 
 
 
@@ -115,7 +117,7 @@ def test_convert_pdf_success(mock_pipeline_class, mock_pdf):
 
     """Test successful single PDF conversion in UI."""
 
-    status, xml_path, mscx_path, _skeleton, _btn = _final_result(
+    status, xml_path, mscx_path, _skeleton, _btn = _unpack_single(_final_result(
 
         convert_pdf(
 
@@ -127,7 +129,7 @@ def test_convert_pdf_success(mock_pipeline_class, mock_pdf):
 
         )
 
-    )
+    ))
 
 
 
@@ -152,9 +154,9 @@ def test_convert_pdf_prefers_gradio_file_path(mock_pipeline_class, tmp_path):
     pdf.write_bytes(b"%PDF-1.4 mock pdf data")
     file_data = SimpleNamespace(path=str(pdf), name="original-filename.pdf")
 
-    status, xml_path, mscx_path, _skeleton, _btn = _final_result(
+    status, xml_path, mscx_path, _skeleton, _btn = _unpack_single(_final_result(
         convert_pdf(file_data)
-    )
+    ))
 
     assert "conversion complete" in status.lower()
     assert xml_path is not None
@@ -185,7 +187,7 @@ def test_convert_pdf_missing():
 
     """Test single PDF conversion fails gracefully if no file provided."""
 
-    status, xml_path, mscx_path, _skeleton, _btn = _final_result(convert_pdf(None))
+    status, xml_path, mscx_path, _skeleton, _btn = _unpack_single(_final_result(convert_pdf(None)))
 
     assert "upload a pdf" in status.lower()
 
@@ -308,7 +310,7 @@ def test_run_diagnostics(mock_chk_dir, mock_find_ms, tmp_path):
 
 
 
-    assert "pre-flight diagnostics" in report.lower()
+    assert "environment diagnostics" in report.lower()
 
     assert "pypdfium2" in report.lower()
 
@@ -373,5 +375,24 @@ def test_create_interface():
     assert interface.css is not None
 
     assert "--color-primary: #EA580C" in interface.css
+    assert "Peak recognition quality" not in interface.css
+
+
+def test_uploaded_file_path_rejects_gradio_original_filename(tmp_path):
+    import pytest
+
+    file_data = SimpleNamespace(path=None, name="original-filename.pdf")
+    with pytest.raises(FileNotFoundError):
+        _uploaded_file_path(file_data)
+
+
+@patch("pdf2muse.ui.PDF2MusePipeline", side_effect=make_pipeline_mock)
+def test_preview_first_page_uses_fast_profile(mock_pipeline_class, mock_pdf):
+    _unpack_single(_final_result(convert_pdf(mock_pdf, preview_first_page=True)))
+    kwargs = mock_pipeline_class.call_args.kwargs
+    assert kwargs["first_page"] == 1
+    assert kwargs["last_page"] == 1
+    assert kwargs["oemer_quality_profile"] == "fast"
+
 
 

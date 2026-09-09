@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install PDF2Muse (platform ONNX Runtime)
+        run: python scripts/install_runtime.py --extras ui,dev,api --no-download
+      - name: Unit tests
+        run: python -m pytest tests/ -q --tb=short
+      - name: Mac wheel regression
+        if: runner.os == 'macOS'
+        run: |
+          python -c "import importlib.metadata as m, onnxruntime as ort; names={d.metadata['Name'].lower() for d in m.distributions()}; assert 'onnxruntime-gpu' not in names; print(ort.__file__); print(ort.get_available_providers()); assert 'CUDAExecutionProvider' not in ort.get_available_providers()"

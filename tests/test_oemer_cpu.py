@@ -145,6 +145,9 @@ def test_oemer_cuda_wrapper_forces_cuda_provider(monkeypatch):
     fake_ort = SimpleNamespace(
         InferenceSession=fake_session,
         get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        SessionOptions=MagicMock,
+        GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99),
+        set_default_logger_severity=lambda *_args, **_kwargs: None,
     )
     monkeypatch.setitem(sys.modules, "onnxruntime", fake_ort)
 
@@ -157,10 +160,9 @@ def test_oemer_cuda_wrapper_forces_cuda_provider(monkeypatch):
     _oemer_cuda.main(["page_000.png"])
 
     run_module.assert_called_once_with("oemer.ete", run_name="__main__")
-    assert session_calls[0][1]["providers"] == [
-        "CUDAExecutionProvider",
-        "CPUExecutionProvider",
-    ]
+    providers = session_calls[0][1]["providers"]
+    assert "CUDAExecutionProvider" in str(providers)
+    assert "CPUExecutionProvider" in str(providers)
 
 
 def test_oemer_cuda_wrapper_rejects_missing_cuda_provider(monkeypatch):
@@ -178,3 +180,29 @@ def test_oemer_cuda_wrapper_rejects_missing_cuda_provider(monkeypatch):
         assert "CUDAExecutionProvider is not available" in str(exc)
     else:
         raise AssertionError("Expected missing CUDA provider to raise")
+
+
+def test_oemer_cpu_coreml_falls_back_to_cpu(monkeypatch):
+    from pdf2muse import _oemer_cpu
+
+    session_calls = []
+
+    def fake_session(*args, **kwargs):
+        providers = kwargs.get("providers") or (args[2] if len(args) >= 3 else None)
+        session_calls.append(providers)
+        if providers and providers[0] == "CoreMLExecutionProvider":
+            raise RuntimeError("coreml unavailable")
+        return object()
+
+    fake_ort = SimpleNamespace(InferenceSession=fake_session)
+    monkeypatch.setitem(sys.modules, "onnxruntime", fake_ort)
+    monkeypatch.setattr(_oemer_cpu.sys, "platform", "darwin")
+    monkeypatch.delenv("PDF2MUSE_OEMER_COREML", raising=False)
+
+    def fake_run_module(*args, **kwargs):
+        fake_ort.InferenceSession("model.onnx")
+
+    monkeypatch.setattr(_oemer_cpu.runpy, "run_module", fake_run_module)
+    _oemer_cpu.main(["page_000.png"])
+    assert session_calls[0][0] == "CoreMLExecutionProvider"
+    assert session_calls[1] == ["CPUExecutionProvider"]

@@ -123,9 +123,11 @@ source "${VENV_DIR}/bin/activate"
 echo -e "${C_YELLOW}[INFO] Upgrading pip...${C_RESET}"
 python3 -m pip install --upgrade pip > /dev/null 2>&1
 
-# Install package
-echo -e "${C_YELLOW}[INFO] Installing PDF2Muse ${EXTRAS}...${C_RESET}"
-pip install -e .${EXTRAS}
+# Install package (oemer --no-deps + platform ONNX Runtime; Mac cannot use onnxruntime-gpu)
+echo -e "${C_YELLOW}[INFO] Installing PDF2Muse ${EXTRAS} with platform ONNX Runtime...${C_RESET}"
+EXTRAS_CSV="${EXTRAS#[}"
+EXTRAS_CSV="${EXTRAS_CSV%]}"
+python3 scripts/install_runtime.py --extras "${EXTRAS_CSV}" --no-download
 echo -e "${C_GREEN}[OK] Dependencies installed successfully.${C_RESET}"
 echo -e ""
 

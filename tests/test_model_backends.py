@@ -52,9 +52,15 @@ def test_model_backend_config_lists_replacement_adapter():
     assert "oemer-stock" in names
     assert "oemer-custom" in names
     assert "legato-experimental" in names
+    assert "homr-experimental" in names
 
 
-def test_model_backend_config_rejects_unknown_backend():
+def test_homr_backend_is_experimental_agpl_slot():
+    config = get_model_backend_config("homr-experimental")
+    assert config.kind == "adapter"
+    assert config.experimental is True
+    assert "AGPL" in config.description
+
     with pytest.raises(ValueError, match="Unknown model backend"):
         get_model_backend_config("unknown-backend")
 

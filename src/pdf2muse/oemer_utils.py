@@ -210,6 +210,15 @@ def list_model_backend_configs() -> list[ModelBackendConfig]:
             ),
             experimental=True,
         ),
+        ModelBackendConfig(
+            name="homr-experimental",
+            kind="adapter",
+            description=(
+                "HOMR multi-staff OMR scaffold (AGPL-3.0). Set PDF2MUSE_HOMR_REPO / "
+                "PDF2MUSE_HOMR_PYTHON. Experimental only — never product default."
+            ),
+            experimental=True,
+        ),
     ]
 
 

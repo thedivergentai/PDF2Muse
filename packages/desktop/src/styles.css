@@ -8,13 +8,18 @@ body {
   margin: 0;
 }
 
-button {
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 8px;
-  border: none;
-  background: linear-gradient(135deg, #ea580c, #f97316);
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
+main {
+  font-family: Inter, system-ui, sans-serif;
+  padding: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.osmd-host {
+  margin-top: 16px;
+  min-height: 480px;
+  border: 1px solid #44403c;
+  border-radius: 12px;
+  background: #fff;
+  color: #1c1917;
 }

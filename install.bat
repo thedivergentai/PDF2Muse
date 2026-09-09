@@ -140,9 +140,12 @@ if %errorlevel% neq 0 (
 echo !C_YELLOW![INFO] Upgrading pip...!C_RESET!
 python -m pip install --upgrade pip >nul 2>&1
 
-:: Install package
-echo !C_YELLOW![INFO] Installing PDF2Muse !EXTRAS!...!C_RESET!
-pip install -e .!EXTRAS!
+:: Install package (oemer --no-deps + platform ONNX Runtime; avoids onnxruntime-gpu on machines without CUDA wheels)
+echo !C_YELLOW![INFO] Installing PDF2Muse !EXTRAS! with platform ONNX Runtime...!C_RESET!
+set "EXTRAS_CSV=!EXTRAS!"
+set "EXTRAS_CSV=!EXTRAS_CSV:[=!"
+set "EXTRAS_CSV=!EXTRAS_CSV:]=!"
+python scripts\install_runtime.py --extras "!EXTRAS_CSV!" --no-download
 if %errorlevel% neq 0 (
     echo !C_RED![ERROR] Installation failed.!C_RESET!
     pause

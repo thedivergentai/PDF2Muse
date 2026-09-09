@@ -10,6 +10,7 @@ from typing import Optional, Union
 from ..legato_env import load_legato_env_defaults
 from ..oemer_utils import ModelBackendConfig, get_model_backend_config
 from .base import AdapterStatus, OmrAdapter
+from .homr import HomrAdapter
 from .legato import LegatoAdapter
 from .oemer import OemerAdapter
 
@@ -29,6 +30,7 @@ def resolve_auto_backend(
     if allow_legato and legato.healthcheck().available:
         logger.info("Auto backend selected: legato-experimental")
         return "legato-experimental"
+    # Never auto-select AGPL HOMR.
     if checkpoint_dir:
         return "oemer-custom"
     logger.info("Auto backend selected: oemer-stock")
@@ -45,7 +47,13 @@ def create_adapter(
 ) -> OmrAdapter:
     """Instantiate the adapter for a model backend configuration."""
 
-    if backend.name == "legato-experimental" or backend.kind == "adapter":
+    if backend.name == "homr-experimental":
+        return HomrAdapter()
+    if backend.name == "legato-experimental":
+        return LegatoAdapter()
+    if backend.kind == "adapter":
+        # Unknown adapter names fall through to Legato for backward compatibility
+        # of tests that only set kind="adapter"; prefer explicit names above.
         return LegatoAdapter()
     return OemerAdapter(
         retries=oemer_retries,
@@ -61,6 +69,7 @@ def adapter_healthchecks() -> list[AdapterStatus]:
     return [
         OemerAdapter().healthcheck(),
         LegatoAdapter().healthcheck(),
+        HomrAdapter().healthcheck(),
     ]
 
 

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Quality / evaluation discussion
+    url: https://github.com/thedivergentai/PDF2Muse/issues
+    about: Transcription accuracy is tracked as a product gap, not always a one-line bug.

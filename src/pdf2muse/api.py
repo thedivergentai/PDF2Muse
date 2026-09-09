@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -10,7 +11,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from .core import PDF2MusePipeline
@@ -49,6 +51,7 @@ class ConvertRequest(BaseModel):
     oemer_device: str = "auto"
     oemer_quality_profile: str = Field(default="quality")
     oemer_retries: bool = True
+    preview_first_page: bool = False
 
 
 def create_app() -> FastAPI:
@@ -56,6 +59,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="PDF2Muse Sidecar", version="2.0.0")
     jobs: dict[str, JobRecord] = {}
+    app.state.jobs = jobs
     lock = threading.Lock()
 
     async def _broadcast(job: JobRecord) -> None:
@@ -88,18 +92,27 @@ def create_app() -> FastAPI:
                 job.message = description
 
         try:
+            first_page = request.first_page
+            last_page = request.last_page
+            quality = request.oemer_quality_profile
+            dpi = request.render_dpi
+            if request.preview_first_page:
+                first_page = 1
+                last_page = 1
+                quality = "fast"
+                dpi = min(dpi, 220)
             pipeline = PDF2MusePipeline(
                 pdf_path=request.pdf_path,
                 output_dir=request.output_dir,
                 deskew=request.deskew,
                 use_tf=request.use_tf,
                 musescore_path=request.musescore_path,
-                first_page=request.first_page,
-                last_page=request.last_page,
+                first_page=first_page,
+                last_page=last_page,
                 model_backend=request.model_backend,
-                render_dpi=request.render_dpi,
+                render_dpi=dpi,
                 oemer_device=request.oemer_device,
-                oemer_quality_profile=request.oemer_quality_profile,
+                oemer_quality_profile=quality,
                 oemer_retries=request.oemer_retries,
             )
             with lock:
@@ -145,6 +158,36 @@ def create_app() -> FastAPI:
             "error": job.error,
             "report": job.report,
         }
+
+    @app.get("/jobs/{job_id}/musicxml")
+    def get_job_musicxml(job_id: str) -> Response:
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status != JobStatus.COMPLETED or job.output_dir is None:
+            raise HTTPException(status_code=409, detail="MusicXML is not ready")
+        xml_path = Path(job.output_dir) / "combined.musicxml"
+        if not xml_path.exists() and job.result_path:
+            candidate = Path(job.result_path)
+            if candidate.suffix.lower() == ".musicxml" and candidate.exists():
+                xml_path = candidate
+            else:
+                sibling = candidate.with_suffix(".musicxml")
+                if sibling.exists():
+                    xml_path = sibling
+        if not xml_path.exists():
+            raise HTTPException(status_code=404, detail="combined.musicxml not found")
+        return Response(
+            content=xml_path.read_bytes(),
+            media_type="application/vnd.recordare.musicxml+xml",
+        )
+
+    @app.post("/jobs/upload")
+    async def create_job_upload(file: UploadFile) -> dict[str, str]:
+        suffix = Path(file.filename or "upload.pdf").suffix or ".pdf"
+        dest = Path(tempfile.gettempdir()) / f"pdf2muse-upload-{uuid.uuid4().hex}{suffix}"
+        dest.write_bytes(await file.read())
+        return create_job(ConvertRequest(pdf_path=str(dest)))
 
     @app.websocket("/jobs/{job_id}/ws")
     async def job_socket(job_id: str, websocket: WebSocket) -> None:

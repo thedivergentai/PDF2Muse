@@ -51,6 +51,16 @@ def format_quality_scorecard(report: dict[str, Any]) -> str:
             f"- **Join:** {join.get('files_joined', 0)} page(s) merged"
             f" ({join.get('files_skipped', 0)} skipped)"
         )
+    flags = report.get("flags") or []
+    if flags:
+        lines.append("")
+        lines.append("**Review flags:**")
+        for flag in flags[:12]:
+            kind = flag.get("kind", "flag")
+            message = flag.get("message", "")
+            lines.append(f"- `{kind}`: {message}")
+        if len(flags) > 12:
+            lines.append(f"- …and {len(flags) - 12} more")
     lines.append("")
     lines.append(
         "*Review generated notation in MuseScore or another editor before "

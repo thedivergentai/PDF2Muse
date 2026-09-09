@@ -19,13 +19,14 @@ from .core import PDF2MusePipeline
 from .musicxml import find_musescore_binary
 from .oemer_utils import download_checkpoints, get_checkpoint_dir
 from .quality_scorecard import format_quality_scorecard, load_benchmark_summary
+from .review import build_score_review_html, playback_events_from_musicxml
 
 configure_windows_stdio()
 
 logger = logging.getLogger(__name__)
 console = Console()
 
-ConvertSingleYield = Tuple[str, Optional[str], Optional[str], dict, dict]
+ConvertSingleYield = Tuple[str, Optional[str], Optional[str], dict, dict, str]
 ConvertBatchYield = Tuple[str, Optional[str], dict, dict]
 ProgressCallback = Callable[[float, str], None]
 
@@ -171,14 +172,71 @@ def _format_conversion_error(exc: Exception) -> str:
     return f"### Error during conversion\n\n`{msg}`"
 
 
-def _uploaded_file_path(file_obj: object) -> str:
-    """Return the server-side path for Gradio upload objects."""
-    for attr in ("path", "name"):
-        value = getattr(file_obj, attr, None)
-        if isinstance(value, (str, Path)) and str(value):
-            return str(value)
+def _review_html_idle() -> str:
+    return (
+        '<p class="empty-download-hint">A side-by-side original page and recognized '
+        "draft will appear here after conversion.</p>"
+    )
 
-    return str(file_obj)
+
+def _png_data_uri(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    import base64
+
+    payload = base64.b64encode(path.read_bytes()).decode("ascii")
+    suffix = path.suffix.lower().lstrip(".") or "png"
+    mime = "image/jpeg" if suffix in {"jpg", "jpeg"} else "image/png"
+    return f"data:{mime};base64,{payload}"
+
+
+def _build_review_panel(output_dir: Path) -> str:
+    xml_src = output_dir / "combined.musicxml"
+    if not xml_src.exists():
+        return _review_html_idle()
+    text = xml_src.read_text(encoding="utf-8")
+    preview = None
+    pages = output_dir / "pages"
+    if pages.exists():
+        pngs = sorted(pages.glob("*.png"))
+        if pngs:
+            preview = _png_data_uri(pngs[0])
+    return build_score_review_html(
+        text,
+        page_image_data_uri=preview,
+        playback_events=playback_events_from_musicxml(text),
+    )
+
+
+def _uploaded_file_path(file_obj: object) -> str:
+    """Return a real server-side path for Gradio uploads.
+
+    Gradio 5/6 FileData.name is the original filename, not a filesystem path.
+    Only return a value that exists on disk.
+    """
+    candidates: list[object] = []
+    if isinstance(file_obj, (str, Path)):
+        candidates.append(file_obj)
+    else:
+        for attr in ("path", "name"):
+            value = getattr(file_obj, attr, None)
+            if value:
+                candidates.append(value)
+
+    for value in candidates:
+        if not isinstance(value, (str, Path)):
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        path = Path(text)
+        if path.exists():
+            return str(path)
+
+    raise FileNotFoundError(
+        "PDF upload did not include a readable temp path. "
+        "If this is Gradio, use FileData.path rather than the original filename."
+    )
 
 
 def convert_pdf(
@@ -192,10 +250,11 @@ def convert_pdf(
     oemer_device: str = "auto",
     oemer_quality_profile: str = "quality",
     model_backend: str = "auto",
-    peak_quality: bool = False,
+    preview_first_page: bool = False,
     progress: gr.Progress = gr.Progress(track_tqdm=False),
 ) -> Generator[ConvertSingleYield, None, None]:
     """Convert a single PDF to MusicXML and MuseScore format with live progress."""
+    idle_review = _review_html_idle()
     if pdf_file is None:
         yield (
             "### Please upload a PDF file first\n\n"
@@ -204,17 +263,18 @@ def convert_pdf(
             None,
             _DOWNLOAD_SKELETON_IDLE,
             _btn_ready(),
+            idle_review,
         )
         return
 
     musescore_path = musescore_path.strip() if musescore_path else None
     first_page = int(first_page) if first_page and int(first_page) > 0 else None
     last_page = int(last_page) if last_page and int(last_page) > 0 else None
-    if peak_quality:
-        oemer_quality_profile = "quality"
-        model_backend = "auto"
-        if oemer_device == "cpu":
-            oemer_device = "auto"
+    if preview_first_page:
+        first_page = 1
+        last_page = 1
+        oemer_quality_profile = "fast"
+        render_dpi = min(int(render_dpi or 360), 220)
 
     yield (
         _md_loading("Preparing", "Starting conversion pipeline…"),
@@ -222,6 +282,7 @@ def convert_pdf(
         None,
         _DOWNLOAD_SKELETON_ACTIVE,
         _btn_busy(),
+        idle_review,
     )
 
     try:
@@ -254,6 +315,7 @@ def convert_pdf(
                     None,
                     _DOWNLOAD_SKELETON_ACTIVE,
                     _btn_busy(),
+                    idle_review,
                 )
 
             progress(0.98, desc="Finalizing downloads")
@@ -281,6 +343,7 @@ def convert_pdf(
                 mscx_dest,
                 _DOWNLOAD_SKELETON_IDLE,
                 _btn_ready(),
+                _build_review_panel(output_dir),
             )
 
     except FileNotFoundError as e:
@@ -292,6 +355,7 @@ def convert_pdf(
             None,
             _DOWNLOAD_SKELETON_IDLE,
             _btn_ready(),
+            _review_html_idle(),
         )
 
     except Exception as e:
@@ -302,6 +366,7 @@ def convert_pdf(
             None,
             _DOWNLOAD_SKELETON_IDLE,
             _btn_ready(),
+            _review_html_idle(),
         )
 
 
@@ -464,7 +529,11 @@ def convert_batch_pdfs(
 
 def run_diagnostics(musescore_custom: Optional[str] = None) -> str:
     """Run environment check and return markdown status report."""
-    report = "## System Pre-Flight Diagnostics\n\n"
+    report = (
+        "## System environment diagnostics\n\n"
+        "These checks confirm **dependencies and checkpoints**, not transcription quality. "
+        "A PASS here does not mean the MusicXML is musically correct.\n\n"
+    )
 
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     report += f"- **Python Engine:** `v{py_ver}` *(Required: >= 3.9)* — **[PASS]**\n\n"
@@ -845,7 +914,7 @@ def create_interface(
                         </svg>
                         <h1>PDF2Muse</h1>
                     </div>
-                    <p>Convert scanned PDF sheet music into editable MusicXML and MuseScore files using AI-powered optical music recognition.</p>
+                    <p>Draft. Review before performance or teaching. Experimental optical music recognition — generated MusicXML is not a finished score.</p>
                 </div>
                 """
             )
@@ -891,17 +960,17 @@ def create_interface(
                                         value=False,
                                         info="ONNX Runtime is the default",
                                     )
-                                peak_quality_checkbox = gr.Checkbox(
-                                    label="Peak recognition quality",
+                                preview_checkbox = gr.Checkbox(
+                                    label="Preview first page (fast)",
                                     value=False,
-                                    info="Quality profile + auto backend cascade (GPU Legato when available)",
+                                    info="Recognize page 1 with the fast profile, then run a full export when you like the draft",
                                 )
                                 with gr.Row():
                                     render_dpi_input = gr.Number(
                                         label="Render DPI",
-                                        value=300,
+                                        value=360,
                                         precision=0,
-                                        info="PDF render resolution for OMR",
+                                        info="Locked quality default is 360 DPI",
                                     )
                                     quality_profile_input = gr.Dropdown(
                                         label="OMR quality profile",
@@ -957,6 +1026,8 @@ def create_interface(
                                     label="Download MuseScore File (.mscx)",
                                     interactive=False,
                                 )
+                                gr.Markdown("### Score review")
+                                review_output = gr.HTML(value=_review_html_idle())
 
                 with gr.TabItem("Batch Processing"):
                     with gr.Row(elem_classes="glass-tab"):
@@ -1066,13 +1137,13 @@ def create_interface(
                     gr.HTML(
                         """
                         <div class="tip-card">
-                            <h3>Higher OMR accuracy</h3>
+                            <h3>Input tips for better drafts</h3>
                             <p>For the best chance of usable results:</p>
                             <ul>
-                                <li>Enable <strong>Peak recognition quality</strong> when you have a GPU.</li>
-                                <li>Scan at 300 DPI or higher with strong contrast.</li>
+                                <li>Use <strong>Preview first page (fast)</strong> before a full export.</li>
+                                <li>Clean typeset PDFs work better than photos of books.</li>
                                 <li>Avoid handwritten, tab-only, or chord-chart layouts.</li>
-                                <li>Use even lighting without shadows or skew.</li>
+                                <li>Open MusicXML in MuseScore 3 or 4 to edit; treat output as a draft.</li>
                             </ul>
                         </div>
                         """
@@ -1091,7 +1162,7 @@ def create_interface(
                 device_input,
                 quality_profile_input,
                 backend_input,
-                peak_quality_checkbox,
+                preview_checkbox,
             ],
             outputs=[
                 status_output,
@@ -1099,6 +1170,7 @@ def create_interface(
                 mscx_output,
                 download_skeleton,
                 convert_button,
+                review_output,
             ],
             show_progress="full",
         )

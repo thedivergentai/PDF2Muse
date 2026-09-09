@@ -18,12 +18,19 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from .adapters import OmrOptions, create_adapter, resolve_backend_config
 from .musicxml import (
     join_musicxml_files,
+    join_musicxml_file_list,
     convert_to_musescore_format,
     analyze_musicxml_structure,
     validate_musicxml_file,
 )
+from .topology import repair_musicxml_topology
+from .header_lock import lock_musicxml_header
+from .rhythm_repair import repair_measure_durations
+from .spellcheck import spellcheck_musicxml
+from .layout import crop_system, detect_systems, page_needs_deskew, system_crop_enabled
 from ._oemer_common import _OEMER_PROFILE_PIXELS
 from .oemer_utils import ensure_checkpoints, resolve_oemer_device
+from .oemer_worker_client import worker_enabled_for_device
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -98,6 +105,7 @@ class PDF2MusePipeline:
         self.keep_page_artifacts = keep_page_artifacts
         self.quality_report = quality_report
         self._page_attempts: dict[str, list[dict]] = {}
+        self._layout_staff_counts: list[int] = []
         self.conversion_report: dict = {}
         self.model_backend = resolve_backend_config(
             model_backend,
@@ -170,9 +178,15 @@ class PDF2MusePipeline:
             logger.error(f"Error converting PDF to images: {e}")
             raise RuntimeError(f"Failed to convert PDF to images: {e}") from e
 
-    def _omr_options(self) -> OmrOptions:
+    def _omr_options(self, image_path: Optional[Path] = None) -> OmrOptions:
+        deskew = self.deskew
+        if deskew and image_path is not None:
+            try:
+                deskew = page_needs_deskew(image_path)
+            except Exception:
+                deskew = self.deskew
         return OmrOptions(
-            deskew=self.deskew,
+            deskew=deskew,
             use_tf=self.use_tf,
             device=self.oemer_device,
             quality_profile=self.oemer_quality_profile,
@@ -180,6 +194,21 @@ class PDF2MusePipeline:
             save_cache=self.save_cache,
             checkpoint_dir=self.model_backend.checkpoint_dir,
         )
+
+    def _recognize_full_page(
+        self, image_path: Path, musicxml_dir: Path
+    ) -> tuple[Optional[Path], Optional[str]]:
+        result = self._adapter.recognize_page(
+            image_path,
+            musicxml_dir,
+            self._omr_options(image_path),
+        )
+        existing = self._page_attempts.get(image_path.stem, [])
+        self._page_attempts[image_path.stem] = existing + result.attempts
+        if result.musicxml_path:
+            return result.musicxml_path, None
+        console.print(f"[yellow][WARN][/yellow] Failed to process {image_path.name}")
+        return None, result.error
 
     def process_image_with_oemer(
         self, image_path: Path, musicxml_dir: Path
@@ -191,16 +220,48 @@ class PDF2MusePipeline:
             Tuple of (path to MusicXML in musicxml_dir, error message if failed)
         """
         logger.info(f"Processing {image_path.name} with {self.model_backend.name}")
-        result = self._adapter.recognize_page(
-            image_path,
-            musicxml_dir,
-            self._omr_options(),
-        )
-        self._page_attempts[image_path.stem] = result.attempts
-        if result.musicxml_path:
-            return result.musicxml_path, None
-        console.print(f"[yellow][WARN][/yellow] Failed to process {image_path.name}")
-        return None, result.error
+        systems = []
+        if system_crop_enabled():
+            try:
+                systems = detect_systems(image_path)
+            except Exception as exc:
+                logger.debug("System detection failed; using full page: %s", exc)
+                systems = []
+        if len(systems) >= 1:
+            crop_dir = musicxml_dir / f"{image_path.stem}_systems"
+            crop_dir.mkdir(parents=True, exist_ok=True)
+            cropped_xmls: list[Path] = []
+            ok = True
+            for index, system in enumerate(systems):
+                crop_path = crop_dir / f"{image_path.stem}_sys{index:02d}.png"
+                try:
+                    crop_system(image_path, system, crop_path)
+                    result = self._adapter.recognize_page(
+                        crop_path,
+                        crop_dir,
+                        self._omr_options(crop_path),
+                    )
+                except Exception as exc:
+                    logger.debug("System crop %s failed: %s", index, exc)
+                    ok = False
+                    break
+                existing = self._page_attempts.get(image_path.stem, [])
+                self._page_attempts[image_path.stem] = existing + result.attempts
+                if not result.musicxml_path:
+                    ok = False
+                    break
+                cropped_xmls.append(result.musicxml_path)
+            if ok and cropped_xmls:
+                combined = musicxml_dir / f"{image_path.stem}.musicxml"
+                try:
+                    join_musicxml_file_list(cropped_xmls, combined)
+                    self._layout_staff_counts.append(
+                        max(system.staff_count for system in systems)
+                    )
+                    return combined, None
+                except Exception as exc:
+                    logger.debug("System join failed; falling back to full page: %s", exc)
+        return self._recognize_full_page(image_path, musicxml_dir)
 
     def run(self, progress_callback: Optional[ProgressCallback] = None) -> Path:
         """
@@ -242,6 +303,8 @@ class PDF2MusePipeline:
             },
             "pages": [],
             "join": {},
+            "flags": [],
+            "stage_timings": {},
             "final_musicxml": {"status": "not_run", "error": None},
             "musescore": {"status": "not_run", "error": None},
         }
@@ -268,11 +331,18 @@ class PDF2MusePipeline:
             page_output_dir.mkdir(parents=True, exist_ok=True)
 
             png_files = self.pdf_to_png(image_dir)
+            preview_images: list[str] = []
+            for png in png_files:
+                if png.exists():
+                    dest = page_output_dir / png.name
+                    shutil.copy2(png, dest)
+                    preview_images.append(str(dest))
+            report["preview_images"] = preview_images
             notify(0.15, f"Rendered {len(png_files)} page(s)")
 
             max_workers = min(4, max(1, (os.cpu_count() or 2) // 2))
-            # One warm CUDA worker (or one GPU-bound subprocess) at a time.
-            if self.oemer_device == "cuda" or os.environ.get("PDF2MUSE_OEMER_WORKER") == "1":
+            # One warm worker (CPU or CUDA) at a time so the ORT session stays hot.
+            if self.oemer_device == "cuda" or worker_enabled_for_device(self.oemer_device):
                 max_workers = 1
             logger.info(f"Running concurrent OMR pipeline with max_workers={max_workers}")
             if max_workers == 1:
@@ -426,6 +496,55 @@ class PDF2MusePipeline:
                     "error": "Combined MusicXML file was not written",
                 }
             else:
+                topology_report = repair_musicxml_topology(
+                    combined_musicxml,
+                    layout_staff_count=(
+                        max(self._layout_staff_counts) if self._layout_staff_counts else None
+                    ),
+                )
+                report["topology_repair"] = asdict(topology_report)
+                if topology_report.changed:
+                    console.print(
+                        f"[cyan]Topology repair:[/cyan] {', '.join(topology_report.actions)}\n"
+                    )
+                header_report = lock_musicxml_header(combined_musicxml)
+                report["header_lock"] = asdict(header_report)
+                if header_report.changed:
+                    console.print(
+                        f"[cyan]Header lock:[/cyan] {', '.join(header_report.actions)}\n"
+                    )
+                    if header_report.fifths is not None:
+                        report["flags"].append(
+                            {
+                                "kind": "header_lock",
+                                "message": (
+                                    f"Locked key fifths={header_report.fifths}, "
+                                    f"time={header_report.beats}/{header_report.beat_type}, "
+                                    f"tempo={header_report.tempo}"
+                                ),
+                            }
+                        )
+                rhythm_report = repair_measure_durations(combined_musicxml)
+                report["rhythm_repair"] = {
+                    "changed": rhythm_report.changed,
+                    "rests_appended": rhythm_report.rests_appended,
+                    "actions": rhythm_report.actions,
+                    "flags": [asdict(flag) for flag in rhythm_report.flags],
+                }
+                for flag in rhythm_report.flags:
+                    report["flags"].append(
+                        {"kind": flag.kind, "message": flag.message}
+                    )
+                spell = spellcheck_musicxml(
+                    combined_musicxml,
+                    write_flags_json=True,
+                    correct_octave_outliers=False,
+                )
+                report["spellcheck"] = spell.to_dict()
+                for flag in spell.flags:
+                    report["flags"].append(
+                        {"kind": flag.kind, "message": flag.message}
+                    )
                 final_validation = validate_musicxml_file(combined_musicxml)
                 report["final_musicxml"] = {
                     "status": "ok" if final_validation.ok else "failed",
@@ -497,6 +616,12 @@ class PDF2MusePipeline:
                     "TemporaryDirectory cleanup failed (ignored): %s", cleanup_exc
                 )
 
+        try:
+            from ._oemer_common import get_stage_timings
+
+            report["stage_timings"] = dict(get_stage_timings() or {})
+        except Exception:
+            report.setdefault("stage_timings", {})
         _write_conversion_report(self.output_dir / "conversion_report.json", report)
         self.conversion_report = report
         notify(1.0, "Complete")

@@ -332,6 +332,46 @@ def _join_with_etree(
     )
 
 
+def join_musicxml_file_list(
+    musicxml_files: list[Path],
+    output_file: Path,
+    *,
+    strict: bool = False,
+) -> MusicXmlJoinReport:
+    """Join an ordered list of MusicXML files (system crops or pages)."""
+
+    output_path = Path(output_file)
+    files = [Path(path) for path in musicxml_files]
+    if not files:
+        raise MusicXmlGateError("No MusicXML files found to join")
+    if len(files) == 1:
+        only = files[0]
+        validation = validate_musicxml_file(only)
+        if not validation.ok:
+            raise MusicXmlGateError(
+                f"Single-page MusicXML failed validation: {validation.error}"
+            )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(only, output_path)
+        return MusicXmlJoinReport(
+            files_seen=1,
+            files_joined=1,
+            files_skipped=0,
+            skipped_files=[],
+            warnings=["single_page_copy"],
+            engine="copy",
+        )
+    temp_dir = output_path.parent / f".join-{output_path.stem}"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        for index, source in enumerate(files):
+            dest = temp_dir / f"{index:03d}_{source.name}"
+            shutil.copy2(source, dest)
+        return join_musicxml_files(temp_dir, output_path, strict=strict)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def join_musicxml_files(
     input_dir: Path,
     output_file: Path,

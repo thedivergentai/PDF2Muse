@@ -68,17 +68,29 @@ The current project does not publish measured accuracy numbers yet. Until evalua
 
 ## Quick Start
 
-Install with the Web UI dependencies:
+PDF2Muse is **not on PyPI yet**. Install from a git clone (or GitHub source zip).
 
-```bash
-pip install -U "pdf2muse[ui]"
+Windows:
+
+```bat
+git clone https://github.com/thedivergentai/PDF2Muse.git
+cd PDF2Muse
+install.bat
+run-ui.bat
 ```
 
-Launch the local Web UI:
+macOS / Linux:
 
 ```bash
+git clone https://github.com/thedivergentai/PDF2Muse.git
+cd PDF2Muse
+chmod +x install.sh
+./install.sh
+source venv/bin/activate
 pdf2muse ui
 ```
+
+The installer pins a **CPU** `onnxruntime` wheel on macOS. Do not `pip install oemer` in a way that pulls `onnxruntime-gpu` — that package has no macOS wheel.
 
 Or run a small CLI smoke test on the first page of a score:
 
@@ -90,19 +102,7 @@ pdf2muse convert path/to/sheet_music.pdf --first-page 1 --last-page 1 -o output
 
 ## Installation
 
-PDF2Muse supports Windows, macOS, and Linux with Python 3.9 or newer.
-
-### Standard Install
-
-```bash
-pip install pdf2muse
-```
-
-### Install With Web UI
-
-```bash
-pip install "pdf2muse[ui]"
-```
+PDF2Muse supports Windows, macOS, and Linux with Python 3.9 or newer. Use the installer scripts so oemer is installed with `--no-deps` and the correct ONNX Runtime wheel.
 
 ### Developer Install
 
@@ -110,26 +110,17 @@ pip install "pdf2muse[ui]"
 git clone https://github.com/thedivergentai/PDF2Muse.git
 cd PDF2Muse
 python -m venv venv
-venv\Scripts\pip.exe install -e ".[dev,ui]"
 ```
 
-On macOS or Linux:
+Then, from the activated venv:
 
 ```bash
-python3 -m venv venv
-venv/bin/pip install -e ".[dev,ui]"
+python scripts/install_runtime.py --extras dev,ui --no-download
 ```
 
-The installer scripts are still available for local source installs:
+On Windows you can run `install.bat` instead. On macOS or Linux, `chmod +x install.sh` then `./install.sh`.
 
-```bat
-install.bat
-```
-
-```bash
-chmod +x install.sh
-./install.sh
-```
+A plain `pip install -e .` can fail on Mac because upstream `oemer` wheels declare `onnxruntime-gpu`.
 
 ---
 
@@ -313,18 +304,20 @@ Package layout:
 ```text
 PDF2Muse/
 ├── src/pdf2muse/
-│   ├── __init__.py
+│   ├── adapters/
 │   ├── cli.py
 │   ├── core.py
-│   ├── degrade.py
-│   ├── evaluation.py
+│   ├── header_lock.py
+│   ├── layout.py
 │   ├── musicxml.py
-│   ├── oemer_utils.py
+│   ├── rhythm_repair.py
+│   ├── spellcheck.py
+│   ├── topology.py
 │   └── ui.py
+├── packages/desktop/
 ├── tests/
 ├── docs/
 ├── evaluation/
-├── datasets/
 ├── pyproject.toml
 └── README.md
 ```
@@ -372,6 +365,10 @@ PDF rendering and OMR inference can be CPU-heavy. Use `--first-page` and `--last
 ### Why is recognition poor on a clean PDF?
 
 Installation success and notation quality are separate concerns. The current `oemer`-backed pipeline still needs systematic evaluation and likely targeted improvements.
+
+### macOS: `onnxruntime-gpu` / `pdf2muse` not on PyPI
+
+Install from this repository with `install.sh` (or `python scripts/install_runtime.py --extras ui`). The published `oemer` wheel asks for `onnxruntime-gpu`, which Microsoft does not ship for macOS. PDF2Muse itself is not on PyPI yet — ignore any old `pip install pdf2muse` snippets.
 
 ---
 
