@@ -21,6 +21,12 @@ jobs:
       - name: Install PDF2Muse (platform ONNX Runtime)
         run: python scripts/install_runtime.py --extras ui,dev,api --no-download
       - name: Unit tests
+        env:
+          # Typer/Rich size their help panels from the terminal. A short
+          # Actions console drops option names from --help output.
+          TERMINAL_WIDTH: "200"
+          COLUMNS: "200"
+          LINES: "100"
         run: python -m pytest tests/ -q --tb=short
       - name: Mac wheel regression
         if: runner.os == 'macOS'
