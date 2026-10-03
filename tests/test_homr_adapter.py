@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -275,4 +276,6 @@ def test_cli_help_mentions_homr():
 
     result = CliRunner().invoke(app, ["convert", "--help"])
     assert result.exit_code == 0
-    assert "homr" in result.stdout
+    # Color forced on GitHub Actions inserts ANSI resets inside "--…" tokens.
+    plain = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", result.stdout)
+    assert "homr" in plain

@@ -1,5 +1,6 @@
 """Tests for key/time/tempo header normalize (preserve vs lock)."""
 
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,6 +11,7 @@ from pdf2muse.header_lock import lock_musicxml_header, spell_midi_in_key
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "musicxml"
 runner = CliRunner()
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def _minimal_score(
@@ -330,7 +332,7 @@ def test_default_mode_is_preserve(tmp_path: Path):
 def test_cli_header_lock_flag_in_help():
     result = runner.invoke(app, ["convert", "--help"])
     assert result.exit_code == 0
-    assert "--header-lock" in result.stdout
+    assert "--header-lock" in _ANSI.sub("", result.stdout)
 
 
 @patch("pdf2muse.cli.PDF2MusePipeline")
