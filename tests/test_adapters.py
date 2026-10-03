@@ -1,6 +1,7 @@
 """Tests for OMR adapter registry."""
 
 from pdf2muse.adapters import (
+    HomrAdapter,
     LegatoAdapter,
     OemerAdapter,
     create_adapter,
@@ -23,11 +24,26 @@ def test_create_legato_adapter():
 
 
 def test_create_homr_adapter():
-    from pdf2muse.adapters import HomrAdapter
-
     backend = get_model_backend_config("homr")
     adapter = create_adapter(backend)
     assert isinstance(adapter, HomrAdapter)
+    assert backend.kind == "homr"
+
+
+def test_create_homr_experimental_adapter():
+    backend = get_model_backend_config("homr-experimental")
+    adapter = create_adapter(backend)
+    assert isinstance(adapter, HomrAdapter)
+
+
+def test_homr_never_auto_selected(monkeypatch):
+    monkeypatch.delenv("PDF2MUSE_ALLOW_LEGATO_AUTO", raising=False)
+    monkeypatch.delenv("PDF2MUSE_ALLOW_HOMR_AUTO", raising=False)
+    monkeypatch.setattr(
+        "pdf2muse.adapters.registry.HomrAdapter.healthcheck",
+        lambda self: type("S", (), {"available": True})(),
+    )
+    assert resolve_auto_backend() == "oemer-stock"
 
 
 def test_resolve_auto_backend_defaults_to_oemer(monkeypatch):

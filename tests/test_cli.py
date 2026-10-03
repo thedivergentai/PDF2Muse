@@ -31,7 +31,9 @@ def test_convert_help():
     assert "--model-backend" in result.stdout
     assert "--checkpoint-dir" in result.stdout
     assert "--header-lock" in result.stdout
+    assert "--preview" in result.stdout
     assert "homr" in help_text
+    assert "homr-experimental" in help_text
 
 
 def test_evaluate_help():

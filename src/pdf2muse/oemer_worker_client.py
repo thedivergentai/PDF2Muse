@@ -22,16 +22,14 @@ _WORKERS: dict[str, "_OemerWorkerClient"] = {}
 
 
 def worker_enabled_for_device(device: str, *, use_tf: bool = False) -> bool:
-    """Default: worker on for CUDA, off for CPU unless PDF2MUSE_OEMER_WORKER=1."""
+    """Default: warm worker on for CPU and CUDA. Set PDF2MUSE_OEMER_WORKER=0 to disable."""
 
     if use_tf:
         return False
     flag = os.environ.get("PDF2MUSE_OEMER_WORKER")
     if flag == "0":
         return False
-    if flag == "1":
-        return True
-    return device == "cuda"
+    return True
 
 
 def get_oemer_worker(device: str) -> "_OemerWorkerClient":

@@ -169,6 +169,11 @@ def convert(
         "--keep-page-artifacts",
         help="Preserve rendered PNGs and per-attempt stdout/stderr/metadata",
     ),
+    preview: bool = typer.Option(
+        False,
+        "--preview",
+        help="Recognize only the first page with the fast profile",
+    ),
     quality_report: bool = typer.Option(
         True,
         "--quality-report/--no-quality-report",
@@ -186,7 +191,8 @@ def convert(
         "auto",
         "--model-backend",
         help=(
-            "OMR backend: auto, oemer-stock, oemer-custom, homr, or legato-experimental"
+            "OMR backend: auto, oemer-stock, oemer-custom, homr, "
+            "homr-experimental (AGPL checkout), or legato-experimental"
         ),
     ),
     checkpoint_dir: Optional[Path] = typer.Option(
@@ -211,6 +217,12 @@ def convert(
         pdf2muse convert sheet_music.pdf -o ./output --first-page 1 --last-page 2
     """
     setup_logging(verbose)
+
+    if preview:
+        first_page = 1
+        last_page = 1
+        oemer_quality_profile = "fast"
+        render_dpi = min(render_dpi, 220)
 
     try:
         pipeline = PDF2MusePipeline(
@@ -307,7 +319,10 @@ def evaluate(
     model_backend: str = typer.Option(
         "auto",
         "--model-backend",
-        help="OMR backend: auto, oemer-stock, oemer-custom, homr, or legato-experimental",
+        help=(
+            "OMR backend: auto, oemer-stock, oemer-custom, homr, "
+            "homr-experimental (AGPL checkout), or legato-experimental"
+        ),
     ),
     checkpoint_dir: Optional[Path] = typer.Option(
         None,

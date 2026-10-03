@@ -30,6 +30,15 @@ _NON_RETRYABLE_FAILURES = frozenset(
     {"timeout", "invalid_musicxml", "no_musicxml_generated", "unexpected_error"}
 )
 _SYMBOL_FAILURES = frozenset({"symbol_extraction_empty_candidates", "symbol_extraction_failed"})
+_RETRYABLE_FAILURES = _SYMBOL_FAILURES | frozenset(
+    {
+        "staffline_empty_peaks",
+        "staffline_no_candidates",
+        "dewarp_empty_grid_groups",
+        "oemer_failed",
+        "empty_pitch_content",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -171,9 +180,12 @@ class OemerAdapter:
     ) -> bool:
         if failure_class in _NON_RETRYABLE_FAILURES:
             return False
+        if failure_class not in _RETRYABLE_FAILURES:
+            return False
         if failure_class in _SYMBOL_FAILURES or failure_class in {
             "staffline_empty_peaks",
             "staffline_no_candidates",
+            "empty_pitch_content",
         }:
             # Prefer no-deskew / threshold / denser tiles / balanced before fast.
             return (
@@ -193,7 +205,7 @@ class OemerAdapter:
                 or next_attempt.line_threshold is not None
                 or next_attempt.quality_profile in {"balanced", "fast"}
             )
-        return True
+        return False
 
     def _run_oemer_subprocess(
         self,
@@ -244,7 +256,7 @@ class OemerAdapter:
             env=env,
             deskew=attempt.deskew,
             use_tf=options.use_tf,
-            save_cache=bool(options.save_cache or self.keep_page_artifacts),
+            save_cache=bool(options.save_cache or self.keep_page_artifacts or self.retries),
             timeout=timeout,
             stream=stream,
         )
@@ -397,7 +409,7 @@ class OemerAdapter:
             command.append("--without-deskew")
         if options.use_tf:
             command.append("--use-tf")
-        if options.save_cache or self.keep_page_artifacts:
+        if options.save_cache or self.keep_page_artifacts or self.retries:
             command.append("--save-cache")
         return command
 
@@ -539,6 +551,17 @@ class OemerAdapter:
                         backend=self.name,
                         attempts=attempts_meta,
                     )
+
+                structure = analyze_musicxml_structure(combined_path)
+                if structure.pitched_notes == 0:
+                    last_failure_class = "empty_pitch_content"
+                    metadata.update(
+                        status="failed",
+                        failure_class="empty_pitch_content",
+                    )
+                    last_error = f"No pitched notes in MusicXML for {image_path.name}"
+                    attempts_meta.append(metadata)
+                    continue
 
                 metadata.update(status="succeeded", musicxml=str(combined_path))
                 if self.quality_report:

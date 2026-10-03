@@ -28,10 +28,10 @@ VALID_MUSICXML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def test_worker_enabled_defaults_cuda_on_cpu_off(monkeypatch):
+def test_worker_enabled_defaults_on_for_cpu_and_cuda(monkeypatch):
     monkeypatch.delenv("PDF2MUSE_OEMER_WORKER", raising=False)
     assert worker_enabled_for_device("cuda") is True
-    assert worker_enabled_for_device("cpu") is False
+    assert worker_enabled_for_device("cpu") is True
     assert worker_enabled_for_device("cuda", use_tf=True) is False
     monkeypatch.setenv("PDF2MUSE_OEMER_WORKER", "0")
     assert worker_enabled_for_device("cuda") is False

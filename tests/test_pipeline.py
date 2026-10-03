@@ -235,7 +235,7 @@ def test_process_image_with_oemer(
     xml_path, err = pipeline.process_image_with_oemer(mock_image, musicxml_dir)
 
     mock_sub_run.assert_called_once_with(
-        [sys.executable, "-W", "ignore", "-m", "pdf2muse._oemer_cpu", str(mock_image)],
+        [sys.executable, "-W", "ignore", "-m", "pdf2muse._oemer_cpu", str(mock_image), "--save-cache"],
         cwd=str(page_dir),
         env=ANY,
         check=True,
@@ -275,7 +275,7 @@ def test_process_image_with_oemer_can_use_cuda_onnx_path(
     xml_path, err = pipeline.process_image_with_oemer(mock_image, musicxml_dir)
 
     mock_sub_run.assert_called_once_with(
-        [sys.executable, "-W", "ignore", "-m", "pdf2muse._oemer_cuda", str(mock_image)],
+        [sys.executable, "-W", "ignore", "-m", "pdf2muse._oemer_cuda", str(mock_image), "--save-cache"],
         cwd=str(page_dir),
         env=ANY,
         check=True,
@@ -543,7 +543,7 @@ def test_process_image_with_oemer_uses_tf_entrypoint_when_requested(
     xml_path, err = pipeline.process_image_with_oemer(mock_image, musicxml_dir)
 
     mock_sub_run.assert_called_once_with(
-        [sys.executable, "-W", "ignore", "-m", "oemer.ete", str(mock_image), "--use-tf"],
+        [sys.executable, "-W", "ignore", "-m", "oemer.ete", str(mock_image), "--use-tf", "--save-cache"],
         cwd=str(page_dir),
         env=ANY,
         check=True,
@@ -716,6 +716,8 @@ def test_pipeline_run_success(
     assert Path(report["pages"][0]["musicxml_path"]).exists()
     assert output_dir in Path(report["pages"][0]["musicxml_path"]).parents
     assert report["final_musicxml"]["status"] in {"ok", "missing"}
+    assert isinstance(report["flags"], list)
+    assert isinstance(report["stage_timings"], dict)
 
 
 @patch("pdf2muse.core.ensure_checkpoints")

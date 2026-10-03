@@ -18,21 +18,40 @@ from ._oemer_common import (
 _CPU_PROVIDERS = ["CPUExecutionProvider"]
 
 
+def _cpu_providers() -> list[str]:
+    """Prefer CoreML on Darwin, with CPU always available as fallback."""
+
+    if sys.platform == "darwin" and os.environ.get("PDF2MUSE_OEMER_COREML", "1") != "0":
+        return ["CoreMLExecutionProvider", "CPUExecutionProvider"]
+    return list(_CPU_PROVIDERS)
+
+
 def _patch_onnxruntime_cpu_provider() -> None:
-    """Force implicit ONNX Runtime sessions to use CPU inside this process."""
+    """Force implicit ONNX Runtime sessions to use CPU (CoreML optional on Mac)."""
     import onnxruntime as ort
 
     original_session = ort.InferenceSession
+    preferred = _cpu_providers()
 
     @functools.wraps(original_session)
     def cpu_session(*args, **kwargs):
         args = list(args)
+        providers = list(preferred)
         if len(args) >= 3:
-            args[2] = list(_CPU_PROVIDERS)
+            args[2] = list(providers)
             kwargs.pop("providers", None)
         else:
-            kwargs["providers"] = list(_CPU_PROVIDERS)
-        return original_session(*args, **kwargs)
+            kwargs["providers"] = list(providers)
+        try:
+            return original_session(*args, **kwargs)
+        except Exception:
+            if providers and providers[0] == "CoreMLExecutionProvider":
+                kwargs["providers"] = list(_CPU_PROVIDERS)
+                if len(args) >= 3:
+                    args[2] = list(_CPU_PROVIDERS)
+                    kwargs.pop("providers", None)
+                return original_session(*args, **kwargs)
+            raise
 
     ort.InferenceSession = cpu_session
 

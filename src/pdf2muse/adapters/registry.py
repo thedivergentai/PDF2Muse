@@ -30,6 +30,8 @@ def resolve_auto_backend(
     if allow_legato and legato.healthcheck().available:
         logger.info("Auto backend selected: legato-experimental")
         return "legato-experimental"
+    # AGPL HOMR is never auto-selected unless explicitly opted in.
+    # homr-experimental is never auto-selected.
     allow_homr = os.environ.get("PDF2MUSE_ALLOW_HOMR_AUTO") == "1"
     if allow_homr and HomrAdapter().healthcheck().available:
         logger.info("Auto backend selected: homr")
@@ -50,9 +52,13 @@ def create_adapter(
 ) -> OmrAdapter:
     """Instantiate the adapter for a model backend configuration."""
 
-    if backend.name == "homr" or backend.kind == "homr":
+    if backend.name in {"homr", "homr-experimental"} or backend.kind == "homr":
         return HomrAdapter()
-    if backend.name == "legato-experimental" or backend.kind == "adapter":
+    if backend.name == "legato-experimental":
+        return LegatoAdapter()
+    if backend.kind == "adapter":
+        # Unknown adapter names fall through to Legato for backward compatibility
+        # of tests that only set kind="adapter"; prefer explicit names above.
         return LegatoAdapter()
     return OemerAdapter(
         retries=oemer_retries,
@@ -67,8 +73,8 @@ def adapter_healthchecks() -> list[AdapterStatus]:
 
     return [
         OemerAdapter().healthcheck(),
-        HomrAdapter().healthcheck(),
         LegatoAdapter().healthcheck(),
+        HomrAdapter().healthcheck(),
     ]
 
 
