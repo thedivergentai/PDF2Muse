@@ -93,6 +93,7 @@ def _pipeline_kwargs(
     oemer_quality_profile: str,
     model_backend: str,
     oemer_retries: bool,
+    header_lock: bool = False,
 ) -> dict:
     return {
         "pdf_path": pdf_path,
@@ -108,6 +109,7 @@ def _pipeline_kwargs(
         "model_backend": model_backend,
         "oemer_retries": oemer_retries,
         "quality_report": True,
+        "header_lock_mode": "lock" if header_lock else "preserve",
     }
 
 
@@ -250,6 +252,8 @@ def convert_pdf(
     oemer_device: str = "auto",
     oemer_quality_profile: str = "quality",
     model_backend: str = "auto",
+    peak_quality: bool = False,
+    header_lock: bool = False,
     preview_first_page: bool = False,
     progress: gr.Progress = gr.Progress(track_tqdm=False),
 ) -> Generator[ConvertSingleYield, None, None]:
@@ -270,6 +274,10 @@ def convert_pdf(
     musescore_path = musescore_path.strip() if musescore_path else None
     first_page = int(first_page) if first_page and int(first_page) > 0 else None
     last_page = int(last_page) if last_page and int(last_page) > 0 else None
+    if peak_quality:
+        oemer_quality_profile = "quality"
+        if oemer_device == "cpu":
+            oemer_device = "auto"
     if preview_first_page:
         first_page = 1
         last_page = 1
@@ -305,6 +313,7 @@ def convert_pdf(
                     oemer_quality_profile=oemer_quality_profile,
                     model_backend=model_backend,
                     oemer_retries=True,
+                    header_lock=header_lock,
                 )
             )
 
@@ -381,6 +390,7 @@ def convert_batch_pdfs(
     oemer_device: str = "auto",
     oemer_quality_profile: str = "quality",
     model_backend: str = "auto",
+    header_lock: bool = False,
     progress: gr.Progress = gr.Progress(track_tqdm=False),
 ) -> Generator[ConvertBatchYield, None, None]:
     """Convert multiple PDFs in batch with live progress; returns a ZIP of outputs."""
@@ -448,6 +458,7 @@ def convert_batch_pdfs(
                         oemer_quality_profile=oemer_quality_profile,
                         model_backend=model_backend,
                         oemer_retries=True,
+                        header_lock=header_lock,
                     )
                 )
 
@@ -618,35 +629,42 @@ def create_interface(
 ) -> gr.Blocks:
     """Create and return the Gradio interface."""
     custom_css = """
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;500;600;700&display=swap');
 
     :root {
-        --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+        --font-display: 'Fraunces', 'Palatino Linotype', Palatino, serif;
+        --font-sans: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
         --space-1: 8px;
         --space-2: 16px;
         --space-3: 24px;
         --space-4: 32px;
-        --radius-sm: 8px;
-        --radius-md: 12px;
-        --radius-lg: 16px;
-        --color-primary: #EA580C;
-        --color-on-primary: #FFFFFF;
-        --color-secondary: #F97316;
-        --color-accent: #2563EB;
-        --color-bg: #1C1917;
-        --color-surface: #292524;
-        --color-surface-elevated: #44403C;
-        --color-border: rgba(255, 255, 255, 0.1);
-        --color-text: #FAFAF9;
-        --color-text-muted: #D6D3D1;
-        --color-text-subtle: #A8A29E;
-        --color-success: #22C55E;
-        --color-destructive: #DC2626;
-        --color-ring: #EA580C;
-        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-        --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 18px;
+        --color-primary: #2F6F5E;
+        --color-on-primary: #F7F1E6;
+        --color-secondary: #C4A35A;
+        --color-accent: #C4A35A;
+        --color-bg: #12161C;
+        --color-surface: #1C2430;
+        --color-surface-elevated: #243042;
+        --color-paper: #F4EBD8;
+        --color-border: rgba(196, 163, 90, 0.22);
+        --color-text: #F4EBD8;
+        --color-text-muted: #C9C0B0;
+        --color-text-subtle: #8F8778;
+        --color-success: #6BAE7A;
+        --color-destructive: #C45C4A;
+        --color-ring: #C4A35A;
+        --shadow-sm: 0 1px 0 rgba(196, 163, 90, 0.08);
+        --shadow-md: 0 18px 40px rgba(0, 0, 0, 0.45);
         --motion-fast: 150ms;
         --motion-base: 250ms;
+        --staff: repeating-linear-gradient(
+            to bottom,
+            transparent 0 11px,
+            rgba(196, 163, 90, 0.07) 11px 12px
+        );
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -665,11 +683,11 @@ def create_interface(
     body, .gradio-container {
         font-family: var(--font-sans) !important;
         font-size: 16px !important;
-        line-height: 1.5 !important;
+        line-height: 1.55 !important;
         background-color: var(--color-bg) !important;
         background-image:
-            radial-gradient(circle at 12% 8%, rgba(234, 88, 12, 0.12) 0%, transparent 42%),
-            radial-gradient(circle at 88% 92%, rgba(37, 99, 235, 0.08) 0%, transparent 45%) !important;
+            var(--staff),
+            radial-gradient(ellipse at 50% -10%, rgba(47, 111, 94, 0.22) 0%, transparent 55%) !important;
         color: var(--color-text) !important;
         overflow-x: hidden !important;
     }
@@ -691,13 +709,35 @@ def create_interface(
     }
 
     .header-banner {
-        background: linear-gradient(135deg, rgba(41, 37, 36, 0.95) 0%, rgba(28, 25, 23, 0.98) 100%) !important;
+        background:
+            linear-gradient(180deg, rgba(36, 48, 66, 0.92) 0%, rgba(18, 22, 28, 0.96) 100%) !important;
         border: 1px solid var(--color-border) !important;
         border-radius: var(--radius-lg) !important;
         padding: var(--space-4) var(--space-3) !important;
         margin-bottom: var(--space-3) !important;
         box-shadow: var(--shadow-md) !important;
         text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .header-banner::before {
+        content: "";
+        position: absolute;
+        inset: 12px 18px auto 18px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--color-secondary), transparent);
+        opacity: 0.7;
+    }
+
+    .header-kicker {
+        display: inline-block;
+        font-size: 0.72rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--color-secondary);
+        margin-bottom: var(--space-1);
+        font-weight: 600;
     }
 
     .header-content {
@@ -709,30 +749,31 @@ def create_interface(
     }
 
     .header-logo {
-        width: 40px;
-        height: 40px;
-        color: var(--color-primary);
+        width: 42px;
+        height: 42px;
+        color: var(--color-secondary);
         flex-shrink: 0;
     }
 
     .header-banner h1 {
-        font-family: var(--font-sans) !important;
-        font-size: clamp(1.75rem, 4vw, 2.5rem) !important;
+        font-family: var(--font-display) !important;
+        font-size: clamp(1.9rem, 4.4vw, 2.7rem) !important;
         font-weight: 700 !important;
+        font-optical-sizing: auto !important;
         margin: 0 !important;
-        color: var(--color-text) !important;
-        letter-spacing: -0.02em !important;
+        color: var(--color-paper) !important;
+        letter-spacing: -0.03em !important;
     }
 
     .header-banner p {
-        font-size: 1rem !important;
+        font-size: 1.05rem !important;
         color: var(--color-text-muted) !important;
-        max-width: 42rem !important;
+        max-width: 40rem !important;
         margin: var(--space-2) auto 0 !important;
     }
 
     .block, .gr-box, .accordion, .glass-tab {
-        background: rgba(41, 37, 36, 0.72) !important;
+        background: rgba(28, 36, 48, 0.88) !important;
         border: 1px solid var(--color-border) !important;
         border-radius: var(--radius-md) !important;
         box-shadow: var(--shadow-sm) !important;
@@ -740,19 +781,20 @@ def create_interface(
     }
 
     .tabs button, button[role="tab"] {
-        font-weight: 500 !important;
+        font-weight: 600 !important;
         min-height: 44px !important;
         padding: 10px 16px !important;
         color: var(--color-text-muted) !important;
+        letter-spacing: 0.01em !important;
     }
 
     .tabs button.selected, button[role="tab"][aria-selected="true"] {
-        color: var(--color-text) !important;
-        border-color: var(--color-primary) !important;
+        color: var(--color-paper) !important;
+        border-color: var(--color-secondary) !important;
     }
 
     input[type="text"], input[type="number"], textarea, select {
-        background: var(--color-bg) !important;
+        background: #0F141A !important;
         border: 1px solid var(--color-border) !important;
         border-radius: var(--radius-sm) !important;
         color: var(--color-text) !important;
@@ -766,7 +808,7 @@ def create_interface(
     button:focus-visible, .gr-button:focus-visible {
         outline: 2px solid var(--color-ring) !important;
         outline-offset: 2px !important;
-        box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.25) !important;
+        box-shadow: 0 0 0 4px rgba(196, 163, 90, 0.22) !important;
     }
 
     label, .gr-form > label span {
@@ -776,22 +818,24 @@ def create_interface(
 
     .convert-btn, button.convert-btn {
         font-family: var(--font-sans) !important;
-        font-weight: 600 !important;
+        font-weight: 700 !important;
         font-size: 1rem !important;
         min-height: 48px !important;
         padding: 12px 24px !important;
-        border-radius: var(--radius-sm) !important;
-        background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%) !important;
+        border-radius: 999px !important;
+        background: var(--color-primary) !important;
         color: var(--color-on-primary) !important;
-        border: none !important;
-        box-shadow: var(--shadow-sm) !important;
+        border: 1px solid rgba(196, 163, 90, 0.35) !important;
+        box-shadow: 0 8px 0 rgba(12, 16, 20, 0.45) !important;
         transition: transform var(--motion-fast) ease, box-shadow var(--motion-base) ease, opacity var(--motion-fast) ease !important;
         cursor: pointer !important;
+        letter-spacing: 0.02em !important;
     }
 
     .convert-btn:hover:not(:disabled):not(.is-busy) {
         transform: translateY(-1px);
-        box-shadow: 0 10px 24px rgba(234, 88, 12, 0.35) !important;
+        box-shadow: 0 10px 0 rgba(12, 16, 20, 0.4) !important;
+        background: #387E6B !important;
     }
 
     .convert-btn.is-busy, .convert-btn:disabled {
@@ -803,7 +847,7 @@ def create_interface(
 
     .download-card {
         padding: var(--space-3) !important;
-        background: rgba(28, 25, 23, 0.65) !important;
+        background: rgba(15, 20, 26, 0.72) !important;
         border: 1px solid var(--color-border) !important;
         border-radius: var(--radius-md) !important;
         position: relative;
@@ -814,7 +858,7 @@ def create_interface(
         margin-bottom: var(--space-2);
         padding: var(--space-2);
         border-radius: var(--radius-sm);
-        background: rgba(28, 25, 23, 0.5);
+        background: rgba(15, 20, 26, 0.5);
         border: 1px dashed var(--color-border);
     }
 
@@ -828,9 +872,9 @@ def create_interface(
         margin-bottom: 10px;
         background: linear-gradient(
             90deg,
-            rgba(68, 64, 60, 0.35) 0%,
-            rgba(120, 113, 108, 0.45) 50%,
-            rgba(68, 64, 60, 0.35) 100%
+            rgba(47, 111, 94, 0.2) 0%,
+            rgba(196, 163, 90, 0.35) 50%,
+            rgba(47, 111, 94, 0.2) 100%
         );
         background-size: 200% 100%;
         animation: shimmer 1.4s ease-in-out infinite;
@@ -861,16 +905,17 @@ def create_interface(
         padding: var(--space-3);
         border-radius: var(--radius-md);
         border: 1px solid var(--color-border);
-        background: rgba(41, 37, 36, 0.55);
+        background: rgba(28, 36, 48, 0.7);
     }
 
-    .requirement-card { border-left: 4px solid var(--color-accent); }
-    .tip-card { border-left: 4px solid var(--color-success); }
+    .requirement-card { border-left: 4px solid var(--color-secondary); }
+    .tip-card { border-left: 4px solid var(--color-primary); }
 
     .requirement-card h3, .tip-card h3 {
         margin-top: 0;
         color: var(--color-text);
-        font-size: 1.0625rem;
+        font-family: var(--font-display);
+        font-size: 1.15rem;
         font-weight: 600;
     }
 
@@ -881,8 +926,18 @@ def create_interface(
         line-height: 1.6;
     }
 
+    .credit-line {
+        text-align: center;
+        color: var(--color-text-subtle);
+        font-size: 0.85rem;
+        margin: 0 0 var(--space-3) 0;
+    }
+
+    .credit-line a { color: var(--color-secondary); }
+
     .prose h3, .markdown h3, .md h3 {
         color: var(--color-text) !important;
+        font-family: var(--font-display) !important;
     }
 
     .prose p, .markdown p, .md p, .prose li, .markdown li {
@@ -902,11 +957,12 @@ def create_interface(
     with interface:
         with gr.Column(elem_classes="container"):
             gr.HTML(
-                f"""
+                """
                 <div class="header-banner">
+                    <span class="header-kicker">Optical music recognition</span>
                     <div class="header-content">
                         <svg class="header-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-                             fill="none" stroke="currentColor" stroke-width="2.5"
+                             fill="none" stroke="currentColor" stroke-width="1.75"
                              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M9 18V5l12-2v13"></path>
                             <circle cx="6" cy="18" r="3"></circle>
@@ -914,7 +970,7 @@ def create_interface(
                         </svg>
                         <h1>PDF2Muse</h1>
                     </div>
-                    <p>Draft. Review before performance or teaching. Experimental optical music recognition — generated MusicXML is not a finished score.</p>
+                    <p>Turn scanned PDFs into draft MusicXML. Review every score before performance or teaching — generated MusicXML is not a finished score.</p>
                 </div>
                 """
             )
@@ -965,6 +1021,19 @@ def create_interface(
                                     value=False,
                                     info="Recognize page 1 with the fast profile, then run a full export when you like the draft",
                                 )
+                                peak_quality_checkbox = gr.Checkbox(
+                                    label="Peak recognition quality",
+                                    value=False,
+                                    info="Forces the quality OMR profile and prefers GPU when device is CPU",
+                                )
+                                header_lock_checkbox = gr.Checkbox(
+                                    label="Lock key / time / tempo across the score",
+                                    value=False,
+                                    info=(
+                                        "Off (default): keep mid-score key, meter, and tempo changes. "
+                                        "On: majority-vote a single header (simple-score OMR cleanup)."
+                                    ),
+                                )
                                 with gr.Row():
                                     render_dpi_input = gr.Number(
                                         label="Render DPI",
@@ -976,13 +1045,14 @@ def create_interface(
                                         label="OMR quality profile",
                                         choices=["fast", "balanced", "quality"],
                                         value="quality",
+                                        info="Used by oemer; HOMR ignores this and uses its own pipeline",
                                     )
                                 with gr.Row():
                                     device_input = gr.Dropdown(
                                         label="OMR device",
                                         choices=["auto", "cpu", "cuda"],
                                         value="auto",
-                                        info="auto uses CUDA when onnxruntime-gpu CUDA EP is available",
+                                        info="auto uses CUDA when available (oemer and HOMR)",
                                     )
                                     backend_input = gr.Dropdown(
                                         label="Model backend",
@@ -990,9 +1060,16 @@ def create_interface(
                                             "auto",
                                             "oemer-stock",
                                             "oemer-custom",
+                                            "homr",
+                                            "homr-experimental",
                                             "legato-experimental",
                                         ],
                                         value="auto",
+                                        info=(
+                                            "homr requires pip install 'pdf2muse[homr]' "
+                                            "(AGPL-3.0, Python ≥ 3.11). "
+                                            "homr-experimental uses PDF2MUSE_HOMR_REPO and is never the default."
+                                        ),
                                     )
 
                             convert_button = gr.Button(
@@ -1058,10 +1135,47 @@ def create_interface(
                                     label="Use TensorFlow",
                                     value=False,
                                 )
+                                batch_header_lock = gr.Checkbox(
+                                    label="Lock key / time / tempo across the score",
+                                    value=False,
+                                )
                                 batch_musescore_input = gr.Textbox(
                                     label="MuseScore Executable Path",
                                     value=default_musescore or "",
                                 )
+                                with gr.Row():
+                                    batch_render_dpi = gr.Number(
+                                        label="Render DPI",
+                                        value=300,
+                                        precision=0,
+                                    )
+                                    batch_quality_profile = gr.Dropdown(
+                                        label="OMR quality profile",
+                                        choices=["fast", "balanced", "quality"],
+                                        value="quality",
+                                    )
+                                with gr.Row():
+                                    batch_device = gr.Dropdown(
+                                        label="OMR device",
+                                        choices=["auto", "cpu", "cuda"],
+                                        value="auto",
+                                    )
+                                    batch_backend = gr.Dropdown(
+                                        label="Model backend",
+                                        choices=[
+                                            "auto",
+                                            "oemer-stock",
+                                            "oemer-custom",
+                                            "homr",
+                                            "homr-experimental",
+                                            "legato-experimental",
+                                        ],
+                                        value="auto",
+                                        info=(
+                                            "homr requires pip install 'pdf2muse[homr]'. "
+                                            "homr-experimental uses PDF2MUSE_HOMR_REPO."
+                                        ),
+                                    )
 
                             batch_button = gr.Button(
                                 "Convert Batch Scores (Outputs Zipped)",
@@ -1128,6 +1242,7 @@ def create_interface(
                             <p>PDF2Muse uses these components for best results:</p>
                             <ul>
                                 <li><strong>PDF rendering</strong>: Built-in via pypdfium2 (no Poppler).</li>
+                                <li><strong>HOMR</strong>: Optional OMR engine (AGPL). Install <code>pdf2muse[homr]</code>, then choose backend <code>homr</code>.</li>
                                 <li><strong>MuseScore</strong>: Optional; exports native `.mscx` from MusicXML.</li>
                             </ul>
                         </div>
@@ -1149,6 +1264,17 @@ def create_interface(
                         """
                     )
 
+            gr.HTML(
+                """
+                <p class="credit-line">
+                    Optional HOMR engine by
+                    <a href="https://github.com/liebharc/homr" target="_blank" rel="noreferrer">liebharc/homr</a>
+                    (AGPL-3.0), wrapped with
+                    <code>scripts/homr_convert_wrapper.py</code>.
+                </p>
+                """
+            )
+
         convert_button.click(
             fn=convert_pdf,
             inputs=[
@@ -1162,6 +1288,8 @@ def create_interface(
                 device_input,
                 quality_profile_input,
                 backend_input,
+                peak_quality_checkbox,
+                header_lock_checkbox,
                 preview_checkbox,
             ],
             outputs=[
@@ -1184,6 +1312,11 @@ def create_interface(
                 batch_musescore_input,
                 batch_first_page,
                 batch_last_page,
+                batch_render_dpi,
+                batch_device,
+                batch_quality_profile,
+                batch_backend,
+                batch_header_lock,
             ],
             outputs=[
                 batch_status,

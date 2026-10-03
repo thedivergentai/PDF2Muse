@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .adapters import OmrOptions, create_adapter, resolve_backend_config
+from .header_lock import VALID_HEADER_MODES, lock_musicxml_header
 from .musicxml import (
     join_musicxml_files,
     join_musicxml_file_list,
@@ -24,7 +25,6 @@ from .musicxml import (
     validate_musicxml_file,
 )
 from .topology import repair_musicxml_topology
-from .header_lock import lock_musicxml_header
 from .rhythm_repair import repair_measure_durations
 from .spellcheck import spellcheck_musicxml
 from .layout import crop_system, detect_systems, page_needs_deskew, system_crop_enabled
@@ -61,6 +61,7 @@ class PDF2MusePipeline:
         oemer_retries: bool = True,
         keep_page_artifacts: bool = False,
         quality_report: bool = True,
+        header_lock_mode: str = "preserve",
     ):
         """
         Initialize the PDF2Muse pipeline.
@@ -81,6 +82,8 @@ class PDF2MusePipeline:
             oemer_retries: Retry known post-processing failures with alternate attempts
             keep_page_artifacts: Preserve rendered pages and per-attempt stdout/stderr
             quality_report: Include structural MusicXML quality details in reports
+            header_lock_mode: ``preserve`` keeps mid-score key/time/tempo; ``lock``
+                majority-votes and forces a single header (OMR cleanup for simple scores)
         """
         self.pdf_path = Path(pdf_path).resolve()
         self.output_dir = Path(output_dir).resolve()
@@ -104,6 +107,11 @@ class PDF2MusePipeline:
         self.oemer_retries = oemer_retries
         self.keep_page_artifacts = keep_page_artifacts
         self.quality_report = quality_report
+        if header_lock_mode not in VALID_HEADER_MODES:
+            raise ValueError(
+                f"header_lock_mode must be one of {sorted(VALID_HEADER_MODES)}"
+            )
+        self.header_lock_mode = header_lock_mode
         self._page_attempts: dict[str, list[dict]] = {}
         self._layout_staff_counts: list[int] = []
         self.conversion_report: dict = {}
@@ -291,6 +299,7 @@ class PDF2MusePipeline:
             "oemer_retries": self.oemer_retries,
             "keep_page_artifacts": self.keep_page_artifacts,
             "quality_report_enabled": self.quality_report,
+            "header_lock_mode": self.header_lock_mode,
             "model_backend": {
                 "name": self.model_backend.name,
                 "kind": self.model_backend.kind,
@@ -309,14 +318,21 @@ class PDF2MusePipeline:
             "musescore": {"status": "not_run", "error": None},
         }
 
-        console.print("[cyan]Checking oemer model checkpoints...[/cyan]")
-        notify(0.04, "Checking model checkpoints")
-        ensure_checkpoints(
-            checkpoint_dir=self.model_backend.checkpoint_dir,
-            download_missing=not self.model_backend.experimental,
-        )
-        console.print("[green][OK][/green] Checkpoints ready\n")
-        notify(0.08, "Checkpoints ready")
+        if self.model_backend.kind == "oemer":
+            console.print("[cyan]Checking oemer model checkpoints...[/cyan]")
+            notify(0.04, "Checking model checkpoints")
+            ensure_checkpoints(
+                checkpoint_dir=self.model_backend.checkpoint_dir,
+                download_missing=not self.model_backend.experimental,
+            )
+            console.print("[green][OK][/green] Checkpoints ready\n")
+            notify(0.08, "Checkpoints ready")
+        else:
+            console.print(
+                f"[cyan]Skipping oemer checkpoints for backend "
+                f"{self.model_backend.name}[/cyan]\n"
+            )
+            notify(0.08, f"Using {self.model_backend.name} backend")
 
         # Manual cleanup: Windows TemporaryDirectory teardown can raise Errno 22 and
         # mask the real conversion error or cascade into empty dirs for later samples.
@@ -507,23 +523,38 @@ class PDF2MusePipeline:
                     console.print(
                         f"[cyan]Topology repair:[/cyan] {', '.join(topology_report.actions)}\n"
                     )
-                header_report = lock_musicxml_header(combined_musicxml)
+                header_report = lock_musicxml_header(
+                    combined_musicxml,
+                    mode=self.header_lock_mode,
+                )
                 report["header_lock"] = asdict(header_report)
                 if header_report.changed:
-                    console.print(
-                        f"[cyan]Header lock:[/cyan] {', '.join(header_report.actions)}\n"
-                    )
-                    if header_report.fifths is not None:
-                        report["flags"].append(
-                            {
-                                "kind": "header_lock",
-                                "message": (
-                                    f"Locked key fifths={header_report.fifths}, "
-                                    f"time={header_report.beats}/{header_report.beat_type}, "
-                                    f"tempo={header_report.tempo}"
-                                ),
-                            }
+                    if header_report.mode == "preserve":
+                        message = (
+                            f"Segment respell: {header_report.notes_respelled} notes "
+                            "in active keys"
                         )
+                        console.print(f"[cyan]Header normalize:[/cyan] {message}\n")
+                        report["flags"].append(
+                            {"kind": "header_lock", "message": message}
+                        )
+                    else:
+                        console.print(
+                            f"[cyan]Header lock:[/cyan] "
+                            f"{', '.join(header_report.actions)}\n"
+                        )
+                        if header_report.fifths is not None:
+                            report["flags"].append(
+                                {
+                                    "kind": "header_lock",
+                                    "message": (
+                                        f"Locked key fifths={header_report.fifths}, "
+                                        f"time={header_report.beats}/"
+                                        f"{header_report.beat_type}, "
+                                        f"tempo={header_report.tempo}"
+                                    ),
+                                }
+                            )
                 rhythm_report = repair_measure_durations(combined_musicxml)
                 report["rhythm_repair"] = {
                     "changed": rhythm_report.changed,

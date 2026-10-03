@@ -52,6 +52,7 @@ def test_model_backend_config_lists_replacement_adapter():
     assert "oemer-stock" in names
     assert "oemer-custom" in names
     assert "legato-experimental" in names
+    assert "homr" in names
     assert "homr-experimental" in names
 
 

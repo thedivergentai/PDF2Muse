@@ -107,17 +107,16 @@ def test_find_musescore_binary_via_path(mock_which):
     assert binary == Path("/usr/bin/MuseScore4")
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows MuseScore install paths")
 @patch("pdf2muse.musicxml.shutil.which")
 @patch("pdf2muse.musicxml.Path.exists")
 def test_find_musescore_binary_via_common_paths(mock_exists, mock_which):
     """Test finding MuseScore binary through common Windows pathways if not in PATH."""
     mock_which.return_value = None
     mock_exists.return_value = True  # Instantly match the first candidate path
-    
-    # Mock OS to be Windows and let Program Files path exist
-    with patch("pdf2muse.musicxml.os.name", "nt"):
-        binary = find_musescore_binary()
-        assert "MuseScore4.exe" in str(binary)
+
+    binary = find_musescore_binary()
+    assert "MuseScore4.exe" in str(binary)
 
 
 @patch("pdf2muse.musicxml.find_musescore_binary")

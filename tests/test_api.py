@@ -27,6 +27,23 @@ def test_create_job_rejects_missing_pdf(client, tmp_path):
     assert response.status_code == 400
 
 
+def test_convert_request_accepts_header_lock_field():
+    from pdf2muse.api import ConvertRequest
+
+    req = ConvertRequest(pdf_path="/tmp/x.pdf", header_lock=True)
+    assert req.header_lock is True
+    req_default = ConvertRequest(pdf_path="/tmp/x.pdf")
+    assert req_default.header_lock is False
+    assert req_default.preview_first_page is False
+
+
+def test_convert_request_accepts_preview_first_page():
+    from pdf2muse.api import ConvertRequest
+
+    req = ConvertRequest(pdf_path="/tmp/x.pdf", preview_first_page=True)
+    assert req.preview_first_page is True
+
+
 def test_musicxml_endpoint_missing_job(client):
     response = client.get("/jobs/does-not-exist/musicxml")
     assert response.status_code == 404
@@ -50,4 +67,3 @@ def test_musicxml_endpoint_returns_bytes(tmp_path):
     response = client.get("/jobs/job-ready/musicxml")
     assert response.status_code == 200
     assert b"<score-partwise" in response.content
-

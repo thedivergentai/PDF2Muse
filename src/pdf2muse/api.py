@@ -51,6 +51,7 @@ class ConvertRequest(BaseModel):
     oemer_device: str = "auto"
     oemer_quality_profile: str = Field(default="quality")
     oemer_retries: bool = True
+    header_lock: bool = False
     preview_first_page: bool = False
 
 
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
                 oemer_device=request.oemer_device,
                 oemer_quality_profile=quality,
                 oemer_retries=request.oemer_retries,
+                header_lock_mode="lock" if request.header_lock else "preserve",
             )
             with lock:
                 job.output_dir = pipeline.output_dir

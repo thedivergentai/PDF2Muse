@@ -362,6 +362,41 @@ def test_download_checkpoints_ui_failure(mock_download):
 
 
 
+@patch("pdf2muse.ui.PDF2MusePipeline", side_effect=make_pipeline_mock)
+def test_convert_pdf_passes_homr_backend_and_header_lock(mock_pipeline_class, mock_pdf):
+    _final_result(
+        convert_pdf(
+            pdf_file=mock_pdf,
+            deskew=True,
+            use_tf=False,
+            model_backend="homr",
+            header_lock=True,
+            peak_quality=True,
+        )
+    )
+    kwargs = mock_pipeline_class.call_args.kwargs
+    assert kwargs["model_backend"] == "homr"
+    assert kwargs["header_lock_mode"] == "lock"
+    # Peak quality must not wipe an explicit HOMR selection.
+    assert kwargs["oemer_quality_profile"] == "quality"
+
+
+@patch("pdf2muse.ui.PDF2MusePipeline", side_effect=make_pipeline_mock)
+def test_convert_batch_pdfs_passes_homr_and_header_lock(mock_pipeline_class, mock_pdf):
+    _final_result(
+        convert_batch_pdfs(
+            pdf_files=[mock_pdf],
+            model_backend="homr",
+            header_lock=True,
+            oemer_device="cpu",
+        )
+    )
+    kwargs = mock_pipeline_class.call_args.kwargs
+    assert kwargs["model_backend"] == "homr"
+    assert kwargs["header_lock_mode"] == "lock"
+    assert kwargs["oemer_device"] == "cpu"
+
+
 def test_create_interface():
 
     """Test Gradio Blocks instantiation finishes correctly."""
@@ -374,8 +409,15 @@ def test_create_interface():
 
     assert interface.css is not None
 
-    assert "--color-primary: #EA580C" in interface.css
+    assert "--color-primary: #2F6F5E" in interface.css
     assert "Peak recognition quality" not in interface.css
+
+    serialized = interface.get_config_file()
+    blob = str(serialized).lower()
+    assert "homr" in blob
+    assert "homr-experimental" in blob
+    assert "lock key" in blob
+    assert "preview first page" in blob
 
 
 def test_uploaded_file_path_rejects_gradio_original_filename(tmp_path):
@@ -393,6 +435,3 @@ def test_preview_first_page_uses_fast_profile(mock_pipeline_class, mock_pdf):
     assert kwargs["first_page"] == 1
     assert kwargs["last_page"] == 1
     assert kwargs["oemer_quality_profile"] == "fast"
-
-
-

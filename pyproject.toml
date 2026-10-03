@@ -43,6 +43,9 @@ api = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
 ]
+homr = [
+    "homr>=0.7.0; python_version >= '3.11'",
+]
 dev = [
     "pytest>=7.0.0",
     "black>=23.0.0",

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 def test_oemer_cpu_wrapper_forces_cpu_provider(monkeypatch):
     from pdf2muse import _oemer_cpu
 
+    monkeypatch.setenv("PDF2MUSE_OEMER_COREML", "0")
     session_calls = []
 
     def fake_session(*args, **kwargs):
@@ -32,6 +33,7 @@ def test_oemer_cpu_wrapper_forces_cpu_provider(monkeypatch):
 def test_oemer_cpu_wrapper_overrides_explicit_providers(monkeypatch):
     from pdf2muse import _oemer_cpu
 
+    monkeypatch.setenv("PDF2MUSE_OEMER_COREML", "0")
     session_calls = []
 
     def fake_session(*args, **kwargs):
@@ -54,6 +56,7 @@ def test_oemer_cpu_wrapper_overrides_explicit_providers(monkeypatch):
 def test_oemer_cpu_wrapper_overrides_positional_providers(monkeypatch):
     from pdf2muse import _oemer_cpu
 
+    monkeypatch.setenv("PDF2MUSE_OEMER_COREML", "0")
     session_calls = []
 
     def fake_session(*args, **kwargs):

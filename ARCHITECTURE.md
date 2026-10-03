@@ -4,7 +4,7 @@
 
 1. **Engine** (`src/pdf2muse/`) — Python library and CLI
    - `PDF2MusePipeline` — single orchestration path for CLI, UI, API
-   - `adapters/` — pluggable OMR backends (oemer, Legato)
+   - `adapters/` — pluggable OMR backends (oemer, HOMR, Legato)
    - `musicxml.py` — gates, music21 join v2, MuseScore export
    - `evaluation.py` — manifest benchmarks (separate from production path)
 
@@ -17,7 +17,13 @@
 
 ## Backend cascade
 
-`model_backend=auto` selects Legato when GPU + repo are configured, else oemer quality path.
+`model_backend=auto` selects Legato when `PDF2MUSE_ALLOW_LEGATO_AUTO=1` and GPU + repo are configured; otherwise HOMR when `PDF2MUSE_ALLOW_HOMR_AUTO=1` and `pdf2muse[homr]` is installed; otherwise oemer-stock.
+
+Supported backends: `oemer-stock` (default), `oemer-custom`, `homr` (optional AGPL extra), `legato-experimental`.
+
+## Post-join headers
+
+By default, mid-score key/time/tempo changes are preserved. Pass `--header-lock` to force a single voted header across the score (OMR cleanup for simple scores).
 
 ## Quality
 

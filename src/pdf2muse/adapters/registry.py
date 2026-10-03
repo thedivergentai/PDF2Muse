@@ -30,7 +30,12 @@ def resolve_auto_backend(
     if allow_legato and legato.healthcheck().available:
         logger.info("Auto backend selected: legato-experimental")
         return "legato-experimental"
-    # Never auto-select AGPL HOMR.
+    # AGPL HOMR is never auto-selected unless explicitly opted in.
+    # homr-experimental is never auto-selected.
+    allow_homr = os.environ.get("PDF2MUSE_ALLOW_HOMR_AUTO") == "1"
+    if allow_homr and HomrAdapter().healthcheck().available:
+        logger.info("Auto backend selected: homr")
+        return "homr"
     if checkpoint_dir:
         return "oemer-custom"
     logger.info("Auto backend selected: oemer-stock")
@@ -47,7 +52,7 @@ def create_adapter(
 ) -> OmrAdapter:
     """Instantiate the adapter for a model backend configuration."""
 
-    if backend.name == "homr-experimental":
+    if backend.name in {"homr", "homr-experimental"} or backend.kind == "homr":
         return HomrAdapter()
     if backend.name == "legato-experimental":
         return LegatoAdapter()
