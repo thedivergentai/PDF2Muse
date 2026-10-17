@@ -179,6 +179,11 @@ def convert(
         "--quality-report/--no-quality-report",
         help="Write structural MusicXML quality metrics to the conversion report",
     ),
+    fill_underfull: bool = typer.Option(
+        False,
+        "--fill-underfull",
+        help="Append guessed rests to underfull measures (default: report only)",
+    ),
     header_lock: bool = typer.Option(
         False,
         "--header-lock",
@@ -242,6 +247,7 @@ def convert(
             keep_page_artifacts=keep_page_artifacts,
             quality_report=quality_report,
             header_lock_mode="lock" if header_lock else "preserve",
+            fill_underfull=fill_underfull,
             model_backend=model_backend,
             checkpoint_dir=str(checkpoint_dir) if checkpoint_dir else None,
         )

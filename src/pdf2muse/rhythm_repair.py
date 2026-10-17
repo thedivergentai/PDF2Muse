@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 from typing import Optional
 
@@ -65,20 +66,30 @@ def _measure_duration(measure: ET.Element) -> float:
     return total
 
 
-def _append_rest(measure: ET.Element, duration: int) -> None:
+def _append_rest(measure: ET.Element, duration: int, divisions: int) -> None:
     note = ET.SubElement(measure, "note")
     ET.SubElement(note, "rest")
     dur = ET.SubElement(note, "duration")
     dur.text = str(duration)
-    type_el = ET.SubElement(note, "type")
-    type_el.text = "whole" if duration >= 8 else "quarter"
+    # Graphic type must agree with duration/divisions, not raw duration units.
+    length = Fraction(duration, divisions)
+    for name, base in (("breve", 8), ("whole", 4), ("half", 2),
+                       ("quarter", 1), ("eighth", Fraction(1, 2)),
+                       ("16th", Fraction(1, 4)), ("32nd", Fraction(1, 8))):
+        for dots in range(4):
+            if length == base * Fraction(2 ** (dots + 1) - 1, 2 ** dots):
+                ET.SubElement(note, "type").text = name
+                for _ in range(dots):
+                    ET.SubElement(note, "dot")
+                return
+    # MusicXML permits duration without type for an unrepresentable fill.
 
 
 def repair_measure_durations(
     path: Path,
     *,
     output_path: Optional[Path] = None,
-    fill_underfull: bool = True,
+    fill_underfull: bool = False,
     tolerance: float = 0.51,
 ) -> RhythmRepairReport:
     """Flag overfull bars; optionally append a rest to underfull bars."""
@@ -99,8 +110,7 @@ def repair_measure_durations(
         beats = 4
         beat_type = 4
         for measure in _findall_local(part, "measure"):
-            attrs = _find_local(measure, "attributes")
-            if attrs is not None:
+            for attrs in _findall_local(measure, "attributes"):
                 div_text = _child_text(attrs, "divisions")
                 if div_text:
                     try:
@@ -118,6 +128,15 @@ def repair_measure_durations(
                             beat_type = int(beat_type_text)
                     except ValueError:
                         pass
+            # HOMR emits compressed-rest containers without note events. Their
+            # count is a display span, not enough information to invent music.
+            if not _findall_local(measure, "note") and any(
+                _local_name(el.tag) == "multiple-rest" for el in measure.iter()
+            ):
+                report.actions.append(
+                    f"skip_multimeasure_rest:{part_id}:{measure.get('number') or '?'}"
+                )
+                continue
             expected = _duration_unit(beats, beat_type, divisions)
             actual = _measure_duration(measure)
             number = measure.get("number") or "?"
@@ -153,7 +172,7 @@ def repair_measure_durations(
                 if fill_underfull:
                     fill = int(round(expected - actual))
                     if fill > 0:
-                        _append_rest(measure, fill)
+                        _append_rest(measure, fill, divisions)
                         report.rests_appended += 1
                         report.changed = True
                         report.actions.append(

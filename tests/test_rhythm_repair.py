@@ -26,7 +26,7 @@ def test_underfull_measure_appends_rest(tmp_path: Path):
         (FIXTURES / "underfull-bar.musicxml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    report = repair_measure_durations(path)
+    report = repair_measure_durations(path, fill_underfull=True)
     assert report.rests_appended == 1
     assert any(flag.kind == "underfull_measure" for flag in report.flags)
     assert "<rest" in path.read_text(encoding="utf-8")
@@ -35,7 +35,7 @@ def test_underfull_measure_appends_rest(tmp_path: Path):
 def test_overfull_measure_flags_without_deleting_notes(tmp_path: Path):
     path = tmp_path / "over.musicxml"
     path.write_text(OVERFULL, encoding="utf-8")
-    report = repair_measure_durations(path)
+    report = repair_measure_durations(path, fill_underfull=True)
     assert report.changed is False
     assert any(flag.kind == "overfull_measure" for flag in report.flags)
     assert path.read_text(encoding="utf-8").count("<note>") == 1
