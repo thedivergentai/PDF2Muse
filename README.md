@@ -423,3 +423,20 @@ PDF2Muse is open-source software licensed under the [MIT License](LICENSE).
 **Authored and maintained by [Divergent AI](https://github.com/thedivergentai)**
 
 </div>
+
+### Conservative rhythm repair
+
+Underfull measures are reported without appending rests by default. Missing
+beats can result from misrecognized notes, meter, or tuplets, so filling the gap
+with silence is a musical guess. To explicitly enable the former behavior:
+
+```bash
+pdf2muse convert score.pdf --fill-underfull
+```
+
+Python callers can pass `fill_underfull=True` to `PDF2MusePipeline` or
+`repair_measure_durations`. Empty compressed multimeasure-rest containers are
+left unchanged even when filling is enabled, with `skip_multimeasure_rest`
+actions recorded in the report. This does not reconstruct missing measures or
+correct recognized rest counts. Parseability and balanced durations do not
+establish musical correctness or a clean MuseScore import.

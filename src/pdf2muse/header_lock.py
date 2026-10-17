@@ -44,8 +44,7 @@ def _vote_key_time_tempo(
     tempo_votes: list[float] = []
     for part in _iter_parts(root):
         for measure in _findall_local(part, "measure")[:4]:
-            attrs = _find_local(measure, "attributes")
-            if attrs is not None:
+            for attrs in _findall_local(measure, "attributes"):
                 key_el = _find_local(attrs, "key")
                 if key_el is not None:
                     fifths_text = _child_text(key_el, "fifths")
@@ -147,29 +146,35 @@ def _apply_attributes(
                 first.append(direction)
             sound.set("tempo", str(int(tempo) if tempo == int(tempo) else tempo))
             actions.append("lock_tempo")
+        # A later attributes block in the first measure must not override the
+        # explicitly locked header written above.
+        for extra in _findall_local(first, "attributes")[1:]:
+            for child in list(extra):
+                if (_local_name(child.tag) == "key" and fifths is not None) or (
+                    _local_name(child.tag) == "time" and beats is not None and beat_type is not None
+                ):
+                    extra.remove(child)
         # Later measures: rewrite conflicting key/time.
         for measure in measures[1:]:
-            attrs = _find_local(measure, "attributes")
-            if attrs is None:
-                continue
-            if fifths is not None:
-                key_el = _find_local(attrs, "key")
-                if key_el is not None:
-                    fifths_el = _ensure_child(key_el, "fifths")
-                    if (fifths_el.text or "").strip() != str(fifths):
-                        fifths_el.text = str(fifths)
-                        actions.append("lock_key")
-            if beats is not None and beat_type is not None:
-                time_el = _find_local(attrs, "time")
-                if time_el is not None:
-                    beats_el = _ensure_child(time_el, "beats")
-                    beat_type_el = _ensure_child(time_el, "beat-type")
-                    if (beats_el.text or "").strip() != str(beats) or (
-                        beat_type_el.text or ""
-                    ).strip() != str(beat_type):
-                        beats_el.text = str(beats)
-                        beat_type_el.text = str(beat_type)
-                        actions.append("lock_time")
+            for attrs in _findall_local(measure, "attributes"):
+                if fifths is not None:
+                    key_el = _find_local(attrs, "key")
+                    if key_el is not None:
+                        fifths_el = _ensure_child(key_el, "fifths")
+                        if (fifths_el.text or "").strip() != str(fifths):
+                            fifths_el.text = str(fifths)
+                            actions.append("lock_key")
+                if beats is not None and beat_type is not None:
+                    time_el = _find_local(attrs, "time")
+                    if time_el is not None:
+                        beats_el = _ensure_child(time_el, "beats")
+                        beat_type_el = _ensure_child(time_el, "beat-type")
+                        if (beats_el.text or "").strip() != str(beats) or (
+                            beat_type_el.text or ""
+                        ).strip() != str(beat_type):
+                            beats_el.text = str(beats)
+                            beat_type_el.text = str(beat_type)
+                            actions.append("lock_time")
     return list(dict.fromkeys(actions))
 
 
@@ -250,8 +255,7 @@ def _respell_pitches_by_segment(root: ET.Element) -> int:
     for part in _iter_parts(root):
         current_fifths = 0
         for measure in _findall_local(part, "measure"):
-            attrs = _find_local(measure, "attributes")
-            if attrs is not None:
+            for attrs in _findall_local(measure, "attributes"):
                 key_el = _find_local(attrs, "key")
                 if key_el is not None:
                     fifths_text = _child_text(key_el, "fifths")
@@ -274,12 +278,10 @@ def _respell_pitches_by_segment(root: ET.Element) -> int:
 def _has_any_key(root: ET.Element) -> bool:
     for part in _iter_parts(root):
         for measure in _findall_local(part, "measure"):
-            attrs = _find_local(measure, "attributes")
-            if attrs is None:
-                continue
-            key_el = _find_local(attrs, "key")
-            if key_el is not None and _child_text(key_el, "fifths") is not None:
-                return True
+            for attrs in _findall_local(measure, "attributes"):
+                key_el = _find_local(attrs, "key")
+                if key_el is not None and _child_text(key_el, "fifths") is not None:
+                    return True
     return False
 
 

@@ -62,6 +62,7 @@ class PDF2MusePipeline:
         keep_page_artifacts: bool = False,
         quality_report: bool = True,
         header_lock_mode: str = "preserve",
+        fill_underfull: bool = False,
     ):
         """
         Initialize the PDF2Muse pipeline.
@@ -82,6 +83,7 @@ class PDF2MusePipeline:
             oemer_retries: Retry known post-processing failures with alternate attempts
             keep_page_artifacts: Preserve rendered pages and per-attempt stdout/stderr
             quality_report: Include structural MusicXML quality details in reports
+            fill_underfull: Opt in to appending rests to underfull measures.
             header_lock_mode: ``preserve`` keeps mid-score key/time/tempo; ``lock``
                 majority-votes and forces a single header (OMR cleanup for simple scores)
         """
@@ -106,6 +108,7 @@ class PDF2MusePipeline:
         self.oemer_quality_profile = oemer_quality_profile
         self.oemer_retries = oemer_retries
         self.keep_page_artifacts = keep_page_artifacts
+        self.fill_underfull = fill_underfull
         self.quality_report = quality_report
         if header_lock_mode not in VALID_HEADER_MODES:
             raise ValueError(
@@ -300,6 +303,7 @@ class PDF2MusePipeline:
             "keep_page_artifacts": self.keep_page_artifacts,
             "quality_report_enabled": self.quality_report,
             "header_lock_mode": self.header_lock_mode,
+            "fill_underfull": self.fill_underfull,
             "model_backend": {
                 "name": self.model_backend.name,
                 "kind": self.model_backend.kind,
@@ -555,7 +559,9 @@ class PDF2MusePipeline:
                                     ),
                                 }
                             )
-                rhythm_report = repair_measure_durations(combined_musicxml)
+                rhythm_report = repair_measure_durations(
+                    combined_musicxml, fill_underfull=self.fill_underfull
+                )
                 report["rhythm_repair"] = {
                     "changed": rhythm_report.changed,
                     "rests_appended": rhythm_report.rests_appended,
